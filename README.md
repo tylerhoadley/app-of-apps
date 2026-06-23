@@ -5,11 +5,12 @@ This repository provides a standardized, enterprise-grade declarative control pl
 ## 🏗 Repository Structural Layers
 
 ```text
-📁 iac/<project>/<kargo-stack>/<app-component>/
-         └─────────├─────────────├───────────────── .appProject_config.yaml      # ArgoCD Project + RBAC via injection 
-                   └─────────────├───────────────── .appProject_config.yaml      # Kargo Project, Kargo workload Values + RBAC via injection
-                                 ├──────────────── .applicationSets_config.yaml # Developer Configuration Value Injector
-                                 └──────────────── values.yaml                  # Target application plain manifests or helm overrides
+📁 
+iac/<project>/<kargo-stack>/<app-component>/
+    └─────────├─────────────├────────── .appProject_config.yaml      # ArgoCD Project + RBAC via injection 
+              └─────────────├────────── .appProject_config.yaml      # Kargo Project, Kargo workload Values + RBAC via injection
+                            ├────────── .applicationSets_config.yaml # ApplicationSet Configuration Value Injector for Kargo labels
+                            └────────── values.yaml                  # Target applicationset generators, and default overrides
 
 ```
 
