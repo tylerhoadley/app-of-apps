@@ -5,11 +5,12 @@ generators:
           env: live
           repoURL: https://github.com/argoproj/argocd-example-apps.git
           targetRevision: HEAD
-          path: guestbook
-          cluster: in-cluster
+          # path: guestbook
+          # cluster: in-cluster
           autoSync: true
           prune: false
           selfHeal: true
+          
         # - appName: backup
         #   env: dev
         #   repoURL: https://github.com/argoproj/argocd-example-apps.git

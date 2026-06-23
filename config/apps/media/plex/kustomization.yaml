@@ -1,0 +1,190 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: plex
+
+helmCharts:
+- name: universal
+  repo: https://charts.computersthatwork.ca/
+  releaseName: plex
+  namespace: plex
+  version: 1.0.4
+  includeCRDs: true
+  valuesInline:
+    global:
+      fullnameOverride: plex
+    image:
+      pullPolicy: Always
+      repository: linuxserver/plex
+      tag: latest
+
+    hostNetwork: true
+
+    env:
+      TZ: America/Toronto
+      PUID: "0"
+      PGID: "0"
+      VERSION: latest
+      PLEX_CLAIM: claim-gbMa_SJts9i19NVuoQ5x
+
+    service:
+      main:
+        primary: false
+        enabled: false
+      lb-bgp:
+        enabled: true
+        type: LoadBalancer
+        loadBalancerIP: 192.168.2.217
+        annotations:
+          metallb.universe.tf/address-pool: external
+        externalTrafficPolicy: Local
+        ports:
+          controller:
+            enabled: true
+            port: 32400
+            nodePort: 32400
+            targetPort: 32400
+            protocol: TCP
+
+    ingress:
+      main:
+        enabled: true
+        annotations:
+          kubernetes.io/ingress.class: nginx
+          # cert-manager.io/cluster-issuer: le-global-issuer
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/proxy-body-size: 1024m
+          cloudflare-operator.io/content: computersthatwork.ca.
+          # cloudflare-operator.io/ip-ref: "dynamic-external-ipv4-address"
+          cloudflare-operator.io/type: CNAME
+          cloudflare-operator.io/proxied: "false"
+          cloudflare-operator.io/ttl: "300"
+          cloudflare-operator.io/interval: 5m
+          external-dns.alpha.kubernetes.io/hostname: plex.computersthatwork.ca
+          external-dns.alpha.kubernetes.io/target: 192.168.2.169
+        hosts:
+          - host: plex.computersthatwork.ca
+            paths:
+            - path: /
+              pathType: Prefix
+        tls:
+        - secretName: wildcard-ctw-ca-tls
+          hosts:
+          - plex.computersthatwork.ca
+    probes:
+      liveness:
+        enabled: true
+        custom: true      
+        spec:
+          # initialDelaySeconds: 10
+          failureThreshold: 3
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: 32400
+          timeoutSeconds: 1
+      readiness:
+        enabled: true
+        custom: true      
+        spec:
+          # initialDelaySeconds: 10
+          failureThreshold: 3
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: 32400
+          timeoutSeconds: 1
+      startup:
+        enabled: true
+        custom: true      
+        spec:
+          initialDelaySeconds: 5
+          failureThreshold: 9999
+          periodSeconds: 5
+          successThreshold: 1
+          tcpSocket:
+            port: 32400
+          timeoutSeconds: 1
+
+    autoscaling:
+      enabled: true
+      target:  plex
+      minReplicas: 1
+      maxReplicas: 1
+      targetCPUUtilizationPercentage:  80
+      targetMemoryUtilizationPercentage:  80
+    resources:
+      # limits:
+      #   cpu: 4
+      #   memory: 4096Mi
+      requests:
+        cpu: 100m
+        memory: 1024Mi
+    dnsConfig:
+      options:
+        - name: ndots
+          value: "1"
+    persistence:
+      config:
+        enabled: true
+        type: nfs
+        server: 192.168.2.245
+        path: /mnt/Main/Media/kubernetes/plex/config
+        mountPath: /config
+        accessModes:
+          - ReadWriteMany 
+      # config:
+      #   enabled: true
+      #   # path: /mnt/Main/Media/k8s/nfs-provisioner/plex/config
+      #   mountPath: /config
+      #   type: emptyDir
+      #   size: 5Gi
+      transcode:
+        enabled: true
+        type: nfs
+        server: 192.168.2.245
+        path: /mnt/Main/Media/Transcode
+        mountPath: /transcode
+      media-tv:
+        enabled: true
+        type: nfs
+        server: 192.168.2.245
+        path: /mnt/Main/Media/TV
+        mountPath: /mnt/Media/Television
+      media-movies:
+        enabled: true
+        type: nfs
+        server: 192.168.2.245
+        path: /mnt/Main/Media/Movies
+        mountPath: /mnt/Media/Movies
+      media-music:
+        enabled: true
+        type: nfs
+        server: 192.168.2.245
+        path: /mnt/Main/Media/Music
+        mountPath: /mnt/Media/Music
+    podSecurityContext:
+      runAsUser: 0
+      runAsGroup: 0
+
+
+    # extraDeploy:
+    #   - apiVersion: bitnami.com/v1alpha1
+    #     kind: SealedSecret
+    #     metadata:
+    #       annotations:
+    #         sealedsecrets.bitnami.com/cluster-wide: "true"
+    #       creationTimestamp: null
+    #       name: sftpgo-password-secret
+    #     spec:
+    #       encryptedData:
+    #         SFTPGO_DEFAULT_ADMIN_USERNAME: AgANQa5DTLy5Q4Gxkql8KY/nSkZh1jkAbw67cnj8e6fJTxXUbM3rSJMBfAeDop25jV4TM48UloJqJP63P9mP6WqqyqeyQlXne3YM14BHnPP+0RfQLil0NhjyXBeLXKN8VU0FfLwqLnovAMQJRKlNaHQvZ5x72dKEGH95EPsnjm9EKO9eejWShSyj7EYOQD0/5xXouwwubUtEQVwaTmKEeAjcruvPxZTGHmIl6IgkBuMuiIiKLjx/rRJ59cBrgQNtmShOyBRPQY9+IAt74HUqW6PSiSNYDRxVfi0WfpA5gJl1Y5IY/P8mi5xuEdvmXWH054f3kkJr1W3S/gPTkHXQzUqwa2jhRvif3r5BxB2xY8GGrQVB8zM28cx89h69jDCGnq03OrOR/x/57nmusjITgbwDiFcAEgsmRxKc/DdJs6ShcoUKmiajaFsAuyf3wRarRalyHVN7TTXwoO5JlamXKFPRUScanDvRjqKJ6F/UtRnjCcF4PEwXppkg9vkjWK3LgYrqfyyi8s6ak8CuT+bdlbKsJUXUSHixbunNAi/CvvSFQ9LABMNfgqaGi2QL7mC9NAv0+Y/UZw652/nw3Eb17BUgXyJTjs8jogBVhUkNaXrC7tjbf5CDRT3cQ4ijF7q57JuNbdEm49pFKc+jjN/V6sRF+RBr1VEFxnGucmNh/eaCFZVqYEwldp4p3N4GVOKH/il2wAmBpg==
+    #         SFTPGO_DEFAULT_ADMIN_PASSWORD: AgBTrVYnmhQNDHK12Wd+kKat+Z8kVrtqmR+6oLqwjpjnOQ4eypZfOC2hMql3zSAizDuccl6JKBJtPswWITg79vTgnSCt7QFwPty9scAD9Dik87OtQrQzTVq1886EyVew/i2KvQr6WkYVBYrwNPIfihJtLey7eSZBEr14Gq/RUWyf2438KppG63FBjVGZyBNUx6HM0sBFWjU6EWxqAi1YeYsDgOeWA/eqc3HgbnBnIoKTJgHdSS17h++uGFpRB7dt+SHYc3jRBrcZkm9GK8HIsBm24/d9z8ZcxErxQgZlG42Jx4vepMuJ8IT+op/eHTUPOXM0zl+ltRx8eCyWeZeCJTVubisZJWWdx7ZBEcpdWL6QGm4r155rpiqJej3dUuN+GTftZxUOjOIStBqn93YksB+JShTpZ9wrvs8K8qQwuSeGfeOCq1Vimb7TfCFhUte7nhnxQXXees8hTPuzCUQKMj8X8lbZ/0nnyhrIX77BiL6z6NDoeCQadbVypvsqiw5ywprvBQ7FpK6DYZgxGUdguErmGgjPDC+XUFArMAxyt8vlHiDv9sPcgu/fKaph+eol4lUCYEI3956/SnuKG5gJ2q9GR49NXjqrAA29uDGlEZofU4FL+SF2O0s1r7T2FQ5cwU3oqCIMo5At0yvPNaw0HT8Br99OqeV83oBYzITbNPjO6KphMwIXfG+Omvr/ENEBx4Wdg1/PHih5UOLU
+    #       template:
+    #         data: null
+    #         metadata:
+    #           annotations:
+    #             sealedsecrets.bitnami.com/cluster-wide: "true"
+    #           creationTimestamp: null
+    #           name: sftpgo-password-secret

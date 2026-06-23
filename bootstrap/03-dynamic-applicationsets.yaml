@@ -71,6 +71,12 @@ spec:
                 - missingkey=error
               template:
                 spec:
+                  {{- if .source }}
+                  source:
+                    {{- if .path.segments }}
+                    path: config/{{ index .path.segments 1 }}/{{ index .path.segments 2 }}/{{ index .path.segments 3 }}
+                    {{- end }}
+                  {{- end }}
                   project: '{{index .path.segments 1}}'
                   destination:
                     name: in-cluster
