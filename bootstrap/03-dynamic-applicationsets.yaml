@@ -71,9 +71,9 @@ spec:
                 - missingkey=error
               template:
                 spec:
-                  {{- if .source }}
+                  {{- if .template.spec.source }}
                   source:
-                    {{- if .path.segments }}
+                    {{- if .template.spec.source.path }}
                     path: config/{{ index .path.segments 1 }}/{{ index .path.segments 2 }}/{{ index .path.segments 3 }}
                     {{- end }}
                   {{- end }}
