@@ -1,0 +1,13 @@
+authorized_stage:
+  - app-revision-sync
+  - iac-revision-sync
+  - performance-gates
+
+chartSelect:
+  - target: Main
+    name: prod
+  - target: develop
+    name: nonprod
+
+
+chartType: applicationset

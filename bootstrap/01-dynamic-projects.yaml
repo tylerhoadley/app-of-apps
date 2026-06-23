@@ -1,0 +1,215 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: dynamic-projects
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1000"
+    # kargo.akuity.io/authorized-stage: "dynamic-projects-project:app-revision-sync"
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - "missingkey=error"
+
+  generators:
+    - git:
+        repoURL: git@github.com:tylerhoadley/app-of-apps.git
+        revision: main
+        files:
+          - path: "iac/*/.appProject_config.yaml"
+  template:
+    metadata:
+      name: '{{ .path.basename }}-pt'
+      namespace: argocd
+      labels:
+        ctw.ca/platform-project: "{{ .path.basename }}"
+      annotations:
+        kargo.akuity.io/authorized-stage: "REPLACE"
+        # kargo.akuity.io/authorized-stage: "{{index .path.segments 1}}-{{ .path.basename }}-sk:argocd-sync-and-wait"
+    spec:
+      project: default
+      destination:
+        name: in-cluster
+        namespace: argocd
+      syncPolicy:
+        automated:
+          enabled: true
+          prune: false
+          selfHeal: true
+        managedNamespaceMetadata:
+          labels:
+            dockerhub: registry
+            gitlab: registry
+            kargo-dockerhub: registry
+            kargo-gitlab: registry
+            kargo-github-token: pat
+            kargo-gitlab-token: pat
+            kargo.akuity.io/project: 'true'
+            wildcard-ctw-ca: tls
+          annotations:
+            reloader.stakater.com/auto: 'true'
+            argocd.argoproj.io/sync-wave: "-200"
+      source:
+        repoURL: https://argoproj.github.io/argo-helm
+        chart: argocd-apps
+        targetRevision: 2.0.5
+        helm:
+          values: |
+            projects:
+              {{ .path.basename }}:
+                sourceRepos:
+                  - '*'
+                destinations:
+                  - namespace: '*'
+                    server: '*'
+                clusterResourceWhitelist:
+                  - group: '*'
+                    kind: '*'
+                namespaceResourceWhitelist:
+                  - group: '*'
+                    kind: '*'
+                orphanedResources:
+                  warn: false
+                roles:
+                  - name: pilot-dev-sync
+                    description: "Allow syncing dev and pilot apps from nonprod and its respective prod group"
+                    policies:
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, logs, get, {{ .path.basename }}/*, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, get, {{ .path.basename }}/*, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applicationsets, get, {{ .path.basename }}/*, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applicationsets, list, {{ .path.basename }}/*, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, sync, {{ .path.basename }}/*-feature, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, sync, {{ .path.basename }}/*-dev, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, sync, {{ .path.basename }}/*-pilot, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, sync, {{ .path.basename }}/*-preview, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, override, applications, {{ .path.basename }}/*, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, delete, {{ .path.basename }}/*-feature, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, delete, {{ .path.basename }}/*-dev, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, delete, {{ .path.basename }}/*-pilot, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, delete, {{ .path.basename }}/*-preview, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/apps/Deployment/restart, {{ .path.basename }}/*-feature, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/apps/Deployment/restart, {{ .path.basename }}/*-dev, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/apps/Deployment/restart, {{ .path.basename }}/*-pilot, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/apps/Deployment/restart, {{ .path.basename }}/*-preview, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/batch/CronJob/create-job, {{ .path.basename }}/*-feature, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/batch/CronJob/create-job, {{ .path.basename }}/*-dev, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/batch/CronJob/create-job, {{ .path.basename }}/*-pilot, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/batch/CronJob/create-job, {{ .path.basename }}/*-preview, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, update, {{ .path.basename }}/*-dev, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, exec, create, {{ .path.basename }}/*-feature, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, exec, create, {{ .path.basename }}/*-dev, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, exec, create, {{ .path.basename }}/*-pilot, allow"
+                      - "p, proj:{{ .path.basename }}:pilot-dev-sync, exec, create, {{ .path.basename }}/*-preview, allow"
+                    groups: 
+                      - "{{ .groups.nonprod }}"
+                      - "{{ .groups.prod }}"
+                  - name: prod-sync
+                    description: "Allow syncing prod apps from prod group"
+                    policies:
+                      - "p, proj:{{ .path.basename }}:prod-sync, logs, get, {{ .path.basename }}/*, allow"
+                      - "p, proj:{{ .path.basename }}:prod-sync, applications, get, {{ .path.basename }}/*, allow"
+                      - "p, proj:{{ .path.basename }}:prod-sync, applications, sync, {{ .path.basename }}/*, allow"
+                    groups:
+                      - "{{ .groups.prod }}"
+
+# ---
+# apiVersion: argoproj.io/v1alpha1
+# kind: ApplicationSet
+# metadata:
+#   name: dynamic-projects
+#   namespace: argocd
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "-10"
+#     kargo.akuity.io/authorized-stage: "dynamic-projects-project:app-revision-sync"
+# spec:
+#   goTemplate: true
+#   goTemplateOptions:
+#     - "missingkey=error"
+#   generators:
+#     - git:
+#         repoURL: git@gitlab.computersthatwork.ca:iac/k8s/ctw-config.git
+#         revision: tnt-kube
+#         files:
+#           - path: "apps/*/kustomization.yaml"
+#           - path: "platform/*/kustomization.yaml"
+#   template:
+#     metadata:
+#       name: '{{ .path.basename }}-pt'
+#     spec:
+#       project: default
+#       destination:
+#         name: in-cluster
+#         namespace: argocd
+#       syncPolicy:
+#         automated:
+#           enabled: true
+#           prune: false
+#           selfHeal: true
+#         managedNamespaceMetadata:
+#           labels: 
+#             wildcard-ctw-ca: tls
+#             dockerhub: registry
+#             gitlab: registry
+#           annotations:
+#             argocd.argoproj.io/sync-wave: "-200"
+#       source:
+#         repoURL: git@gitlab.computersthatwork.ca:iac/k8s/ctw-config.git
+#         path: 'apps/{{ .path.basename }}'
+#         targetRevision: tnt-kube
+#         kustomize:
+#           patches:
+#             - target:
+#                 group: argoproj.io
+#                 kind: AppProject
+#                 # name: '' 
+#               patch: |-
+#                 - op: replace
+#                   path: /metadata/name
+#                   value: '{{ .path.basename }}'
+#                 - op: add
+#                   path: /spec/description
+#                   value: "Dynamically generated via Kustomize for project {{ .path.basename }}"
+#                 - op: replace
+#                   path: /spec/roles/0/policies
+#                   value:
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, logs, get, {{ .path.basename }}/*, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, get, {{ .path.basename }}/*, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applicationsets, get, {{ .path.basename }}/*, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applicationsets, list, {{ .path.basename }}/*, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, sync, {{ .path.basename }}/*-feature, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, sync, {{ .path.basename }}/*-dev, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, sync, {{ .path.basename }}/*-pilot, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, sync, {{ .path.basename }}/*-preview, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, override, applications, {{ .path.basename }}/*, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, delete, {{ .path.basename }}/*-feature, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, delete, {{ .path.basename }}/*-dev, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, delete, {{ .path.basename }}/*-pilot, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, delete, {{ .path.basename }}/*-preview, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/apps/Deployment/restart, {{ .path.basename }}/*-feature, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/apps/Deployment/restart, {{ .path.basename }}/*-dev, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/apps/Deployment/restart, {{ .path.basename }}/*-pilot, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/apps/Deployment/restart, {{ .path.basename }}/*-preview, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/batch/CronJob/create-job, {{ .path.basename }}/*-feature, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/batch/CronJob/create-job, {{ .path.basename }}/*-dev, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/batch/CronJob/create-job, {{ .path.basename }}/*-pilot, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, action/batch/CronJob/create-job, {{ .path.basename }}/*-preview, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, applications, update, {{ .path.basename }}/*-dev, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, exec, create, {{ .path.basename }}/*-feature, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, exec, create, {{ .path.basename }}/*-dev, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, exec, create, {{ .path.basename }}/*-pilot, allow"
+#                     - "p, proj:{{ .path.basename }}:pilot-dev-sync, exec, create, {{ .path.basename }}/*-preview, allow"
+#                 - op: add
+#                   path: /spec/roles/0/groups
+#                   value: 
+#                     - "{{ .groups.nonprod }}"
+#                     - "{{ .groups.prod }}"
+#                 - op: add
+#                   path: /spec/roles/1/policies
+#                   value:
+#                     - "p, proj:{{ .path.basename }}:prod-sync, logs, get, {{ .path.basename }}/*, allow"
+#                     - "p, proj:{{ .path.basename }}:prod-sync, applications, get, {{ .path.basename }}/*, allow"
+#                     - "p, proj:{{ .path.basename }}:prod-sync, applications, sync, {{ .path.basename }}/*, allow"
+#                 - op: add
+#                   path: /spec/roles/1/groups
+#                   value: 
+#                     - "{{ .groups.prod }}"

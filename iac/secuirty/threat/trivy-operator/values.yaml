@@ -1,0 +1,55 @@
+generators:
+  - list:
+      elements:
+        - appName: trivy-operator
+          env: live
+          repoURL: https://github.com/argoproj/argocd-example-apps.git
+          targetRevision: HEAD
+          path: guestbook
+          cluster: in-cluster
+          autoSync: true
+          prune: false
+          selfHeal: true
+        # - appName: backup
+        #   env: dev
+        #   repoURL: https://github.com/argoproj/argocd-example-apps.git
+        #   targetRevision: HEAD
+        #   path: guestbook
+        #   cluster: in-cluster
+        #   autoSync: true
+        #   prune: false
+        #   selfHeal: true
+
+templatePatch: |
+  spec:
+    syncPolicy:
+      {{- if .autoSync }}
+      automated:
+        enabled: true
+        prune: {{ .prune }}
+        selfHeal: {{ .selfHeal }}
+      {{- else }}
+      automated:
+        enabled: false
+        prune: {{ .prune }}
+        selfHeal: {{ .selfHeal }}
+      {{- end }}
+template:
+  metadata:
+    name: '{{ .appName }}-{{ .env }}'
+  spec:
+    source:
+      repoURL: '{{ .repoURL }}'
+      targetRevision: '{{ .targetRevision }}'
+      path: '{{ .path }}'
+    destination:
+      name: '{{ .cluster }}'
+      # namespace: ${ARGOCD_APP_NAMESPACE}
+    syncPolicy:
+      automated:
+        prune: false
+        selfHeal: false
+        enabled: false
+      syncOptions:
+        - CreateNamespace=true
+        - RespectIgnoreDifferences=true # Essential for ignoreDifferences to work

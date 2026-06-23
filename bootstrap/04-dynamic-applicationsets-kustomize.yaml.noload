@@ -1,0 +1,148 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: dynamic-applicationsets
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-980"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: git@github.com:tylerhoadley/app-of-apps.git
+        revision: main
+        files:
+          - path: "iac/*/*/*/.kustomize_config.yaml"
+  template:
+    metadata:
+      name: '{{index .path.segments 2}}-{{ .path.basename }}-at'
+      labels:
+        ctw.ca/platform-project: "{{index .path.segments 1}}"
+        ctw.ca/kargo-stack:     "{{index .path.segments 2}}"
+        ctw.ca/app-component:   "{{index .path.segments 3}}"
+        ctw.ca/finops-cost-center: "cc-{{index .path.segments 1}}-{{index .path.segments 2}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "-5"
+        kargo.akuity.io/authorized-stage: "REPLACE"
+    spec:
+      project: '{{index .path.segments 1}}'
+      destination:
+        name: in-cluster
+        namespace: '{{index .path.segments 2}}'
+      syncPolicy:
+        automated:
+          enabled: true
+          prune: false
+          selfHeal: true
+        managedNamespaceMetadata:
+          labels: 
+            wildcard-ctw-ca: tls
+            dockerhub: registry
+            gitlab: registry
+          annotations:
+            argocd.argoproj.io/sync-wave: "-190"
+            kargo.akuity.io/authorized-stage: >-
+              {{ index .path.segments 2 }}:app-revision-sync
+              {{- if hasKey . "authorized_stage" -}}
+                {{- range .authorized_stage -}}
+                  ,{{ index $.path.segments 2 }}:{{ . }}
+                {{- end -}}
+              {{- end -}}
+      source:
+        # repoURL: https://argoproj.github.io/argo-helm
+        # chart: argocd-apps
+        # targetRevision: 2.0.5
+        # helm:
+        #   releaseName: '{{index .path.segments 2}}-{{ .path.basename }}'
+        #   valueFiles:
+        #     - "values.yaml"  
+        repoURL: git@gitlab.computersthatwork.ca:iac/k8s/ctw-config.git
+        path: 'iac/{{index .path.segments 1}}/{{index .path.segments 2}}/{{ .path.basename }}'
+        targetRevision: tnt-kube
+        kustomize:
+          # namePrefix: '{{index .path.segments 2}}-{{ .path.basename }}'
+          # commonLabels:
+          # labelWithoutSelector:
+          # labelIncludeTemplates:
+          # commonAnnotations:
+          patches:
+
+            - target:
+                group: argoproj.io
+                kind: ApplicationSet
+                # name: '' 
+              patch: |-
+                - op: replace
+                  path: /metadata/name
+                  value: '{{index .path.segments 2}}-{{ .path.basenameNormalized }}'
+            - target:
+                group: argoproj.io
+                kind: ApplicationSet
+              patch: |-
+                - op: replace
+                  path: /spec/template/spec/project
+                  value: '{{index .path.segments 1}}'
+            - target:
+                group: argoproj.io
+                kind: ApplicationSet
+              patch: |-
+                - op: add
+                  path: /spec/template/spec/destination/namespace
+                  value: '{{index .path.segments 3}}'
+            - target:
+                group: argoproj.io
+                kind: ApplicationSet
+              patch: |-
+                - op: add
+                  path: /metadata/labels
+                  value: {}
+                - op: add
+                  path: /spec/template/metadata/labels
+                  value: {}
+                - op: add
+                  path: /spec/template/spec/syncPolicy
+                  value: {}
+                - op: add
+                  path: /spec/template/spec/syncPolicy/managedNamespaceMetadata
+                  value: {}
+                - op: add
+                  path: /spec/template/spec/syncPolicy/managedNamespaceMetadata/labels
+                  value: {}
+                - op: add
+                  path: /metadata/labels/ctw.ca~1platform-project
+                  value: '{{index .path.segments 1}}'
+                - op: add
+                  path: /metadata/labels/ctw.ca~1kargo-stack
+                  value: '{{index .path.segments 2}}'
+                - op: add
+                  path: /metadata/labels/ctw.ca~1app-component
+                  value: '{{index .path.segments 3}}'
+                - op: add
+                  path: /metadata/labels/ctw.ca~1finops-cost-center
+                  value: 'cc-{{index .path.segments 1}}-{{index .path.segments 2}}'
+                - op: add
+                  path: /spec/template/metadata/labels/ctw.ca~1platform-project
+                  value: '{{index .path.segments 1}}'
+                - op: add
+                  path: /spec/template/metadata/labels/ctw.ca~1kargo-stack
+                  value: '{{index .path.segments 2}}'
+                - op: add
+                  path: /spec/template/metadata/labels/ctw.ca~1app-component
+                  value: '{{index .path.segments 3}}'
+                - op: add
+                  path: /spec/template/metadata/labels/ctw.ca~1finops-cost-center
+                  value: 'cc-{{index .path.segments 1}}-{{index .path.segments 2}}'
+                - op: add
+                  path: /spec/template/spec/syncPolicy/managedNamespaceMetadata/labels/ctw.ca~1platform-project
+                  value: '{{index .path.segments 1}}'
+                - op: add
+                  path: /spec/template/spec/syncPolicy/managedNamespaceMetadata/labels/ctw.ca~1kargo-stack
+                  value: '{{index .path.segments 2}}'
+                - op: add
+                  path: /spec/template/spec/syncPolicy/managedNamespaceMetadata/labels/ctw.ca~1app-component
+                  value: '{{index .path.segments 3}}'
+                - op: add
+                  path: /spec/template/spec/syncPolicy/managedNamespaceMetadata/labels/ctw.ca~1finops-cost-center
+                  value: 'cc-{{index .path.segments 1}}-{{index .path.segments 2}}'
+                  

@@ -1,0 +1,91 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: dynamic-stacks
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-990"
+    kargo.akuity.io/authorized-stage: "dynamic-stacks-project:argocd-sync-and-wait"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: git@github.com:tylerhoadley/app-of-apps.git
+        revision: main
+        files:
+          - path: "iac/*/*/.kargoProject_config.yaml"
+  template:
+    metadata:
+      name: '{{index .path.segments 1}}-{{ .path.basename }}-project'
+      namespace: argocd
+      labels:
+        ctw.ca/kargo-stack: "{{index .path.segments 1}}-{{ .path.basename }}-project"
+      annotations:
+        argocd.argoproj.io/sync-wave: "-10"
+        kargo.akuity.io/authorized-stage: "REPLACE"
+    spec:
+      project: '{{index .path.segments 1}}'
+      destination:
+        name: in-cluster
+        namespace: '{{index .path.segments 1}}-{{ .path.basename }}-project'
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+        automated:
+          enabled: true
+          prune: false
+          selfHeal: true
+        managedNamespaceMetadata:
+          labels: 
+            wildcard-ctw-ca: tls
+            dockerhub: registry
+            gitlab: registry
+            kargo-dockerhub: registry
+            kargo-gitlab: registry
+            kargo-github-token: pat
+            kargo-gitlab-token: pat
+            kargo.akuity.io/project: "true"
+          annotations:
+            argocd.argoproj.io/sync-wave: "-195"
+      sources:
+        - repoURL: https://charts.computersthatwork.ca
+          chart: kargo-apps
+          targetRevision: 0.0.4
+          helm:
+            values: |
+              project:
+                {{index .path.segments 1}}-{{ .path.basename }}-project:
+                  enabled: true
+                  create: true
+                  
+                  # 1. Base Configuration Mapping
+                  config:
+                    enabled: true
+                    {{- if .projectConfig }}
+                    {{- if .projectConfig.promotionPolicies }}
+                    promotionPolicies:
+                      {{- .projectConfig.promotionPolicies | toYaml | nindent 22 }}
+                    {{- end }}
+                    {{- end }}
+                  
+                  # 2. Dynamic Injection Blocks using cleanly structured toYaml pipelines
+                  {{- if .analysisTemplates }}
+                  analysisTemplate:
+                    {{- .analysisTemplates | toYaml | nindent 20 }}
+                  {{- end }}
+                  
+                  {{- if .warehouses }}
+                  warehouse:
+                    {{- .warehouses | toYaml | nindent 20 }}
+                  {{- end }}
+                  
+                  {{- if .stages }}
+                  stage:
+                    {{- .stages | toYaml | nindent 20 }}
+                  {{- end }}
+                  
+                  {{- if .promotionTasks }}
+                  promotionTask:
+                    {{- .promotionTasks | toYaml | nindent 20 }}
+                  {{- end }}

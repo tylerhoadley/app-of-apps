@@ -1,0 +1,87 @@
+projectConfig:
+  promotionPolicies:
+    - stage: dev
+      autoPromotionEnabled: true
+    - stage: pilot
+      autoPromotionEnabled: false
+
+warehouses:
+  app-warehouse:
+    enabled: false
+    interval: "5m0s"
+    freightCreationPolicy: "Automatic"
+    subscriptions:
+      - git:
+          repoURL: "git@gitlab.computersthatwork.ca:iac/k8s/ctw-config.git"
+          profile: "main"
+      - image:
+          repoURL: "ghcr.io/your-org/core-api"
+          imageSelectionStrategy: "SemVer"
+          semverConstraint: "^1.0.0"
+
+stages:
+  dev:
+    enabled: false
+    requestedFreight:
+      - origin:
+          kind: Warehouse
+          name: app-warehouse
+        sources:
+          direct: true
+    promotionTemplate:
+      steps:
+        - uses: git-clone
+          config:
+            repoURL: "git@gitlab.computersthatwork.ca:iac/k8s/ctw-config.git"
+        - uses: kustomize-set-image
+          config:
+            image: "ghcr.io/your-org/core-api"
+            path: "apps/argocdProjectName/kargoArgocdProjectName/dev"
+        - uses: git-commit
+          config:
+            message: "chore(kargo): auto-promoted to dev"
+
+  pilot:
+    enabled: false
+    freightRequest:
+      origin:
+        kind: Warehouse
+        name: app-warehouse
+    verification:
+      analysisTemplates:
+        - name: datadog-error-rate-gate
+    promotionTemplate:
+      steps:
+        - uses: git-clone
+          config:
+            repoURL: "git@gitlab.computersthatwork.ca:iac/k8s/ctw-config.git"
+        - uses: git-open-pr
+          config:
+            title: "Promote Freight to Pilot"
+            sourceBranch: "kargo-staging"
+            targetBranch: "main"
+
+analysisTemplates:
+  datadog-error-rate-gate:
+    enabled: false
+    metrics:
+      - name: apm-errors
+        interval: "30s"
+        successCondition: "result[0] < 0.01"
+        provider:
+          datadog:
+            address: "https://api.datadoghq.com"
+            query: "sum:trace.http.request.errors{env:pilot}.as_count()"
+
+promotionTasks:
+  argocd-sync-and-wait:
+    enabled: false
+    steps:
+      - uses: argocd-update
+        config:
+          apps:
+            - name: "${{ vars.targetArgoAppName }}"
+      - uses: argocd-wait
+        config:
+          apps:
+            - name: "${{ vars.targetArgoAppName }}"

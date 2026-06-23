@@ -1,0 +1,82 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: dynamic-applicationsets-helm
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-980"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: git@github.com:tylerhoadley/app-of-apps.git
+        revision: main
+        files:
+          - path: "iac/*/*/*/.applicationSets_config.yaml"
+  template:
+    metadata:
+      name: '{{index .path.segments 2}}-{{ .path.basename }}-helm'
+      labels:
+        ctw.ca/platform-project: "{{index .path.segments 1}}"
+        ctw.ca/kargo-stack:     "{{index .path.segments 2}}"
+        ctw.ca/app-component:   "{{index .path.segments 3}}"
+        ctw.ca/finops-cost-center: "cc-{{index .path.segments 1}}-{{index .path.segments 2}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "-5"
+        kargo.akuity.io/authorized-stage: "REPLACE"
+    spec:
+      project: '{{index .path.segments 1}}'
+      destination:
+        name: in-cluster
+        namespace: '{{index .path.segments 2}}'
+      syncPolicy:
+        automated:
+          enabled: false
+          prune: false
+          selfHeal: true
+        managedNamespaceMetadata:
+          labels: 
+            wildcard-ctw-ca: tls
+            dockerhub: registry
+            gitlab: registry
+          annotations:
+            argocd.argoproj.io/sync-wave: "-190"
+            kargo.akuity.io/authorized-stage: >-
+              {{ index .path.segments 2 }}:app-revision-sync
+              {{- if hasKey . "authorized_stage" -}}
+                {{- range .authorized_stage -}}
+                  ,{{ index $.path.segments 2 }}:{{ . }}
+                {{- end -}}
+              {{- end -}}
+      sources:
+        - repoURL: git@github.com:tylerhoadley/app-of-apps.git
+          targetRevision: main
+          ref: values
+        - repoURL: https://charts.computersthatwork.ca
+          chart: applicationsets
+          targetRevision: 2.0.5
+        # - repoURL: git@gitlab.computersthatwork.ca:iac/k8s/ctw-config.git
+        #   targetRevision: tnt-kube
+        #   path: "charts/applicationsets"
+          helm:
+            releaseName: >-
+              {{index .path.segments 3}}
+            valueFiles:
+            - $values/iac/{{index .path.segments 1}}/{{index .path.segments 2}}/{{index .path.segments 3}}/values.yaml
+            values: |
+              namespace: argocd
+              goTemplate: true
+              goTemplateOptions:
+                - missingkey=error
+              template:
+                spec:
+                  project: '{{index .path.segments 1}}'
+                  destination:
+                    name: in-cluster
+                    namespace: '{{index .path.segments 3}}'
+                  syncPolicy:
+                    automated:
+                      prune: false
+                      selfHeal: false
+
