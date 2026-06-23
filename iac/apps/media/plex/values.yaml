@@ -42,7 +42,7 @@ template:
     source:
       repoURL: '{{ .repoURL }}'
       targetRevision: '{{ .targetRevision }}'
-      path: '{{ .path }}'
+      # path: '{{ .path }}'
     destination:
       name: '{{ .cluster }}'
       # namespace: ${ARGOCD_APP_NAMESPACE}
