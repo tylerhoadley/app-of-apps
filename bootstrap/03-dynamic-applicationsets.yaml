@@ -71,11 +71,9 @@ spec:
                 - missingkey=error
               template:
                 spec:
-                  {{- if .template.spec.source -}}
+                  {{- if .autoSource -}}
                   source:
-                    {{- if .template.spec.source.path -}}
                     path: 'config/{{ index .path.segments 1 }}/{{ index .path.segments 2 }}/{{ index .path.segments 3 }}'
-                    {{- end -}}
                   {{- end -}}
                   project: '{{index .path.segments 1}}'
                   destination:
