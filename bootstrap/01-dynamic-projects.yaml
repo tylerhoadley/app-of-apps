@@ -17,6 +17,8 @@ spec:
         revision: main
         files:
           - path: "iac/*/.appProject_config.yaml"
+  syncPolicy:
+    preserveResourcesOnDeletion: true 
   template:
     metadata:
       name: '{{ .path.basename }}-pt'
