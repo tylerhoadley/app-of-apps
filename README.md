@@ -8,7 +8,7 @@ This repository provides a standardized, enterprise-grade declarative control pl
 📁 
 iac/<project>/<kargo-stack>/<app-component>/
     └─────────├─────────────├────────── .appProject_config.yaml      # ArgoCD Project + RBAC via injection 
-              └─────────────├────────── .appProject_config.yaml      # Kargo Project, Kargo workload Values + RBAC via injection
+              └─────────────├────────── .kargoProject_config.yaml    # Kargo Project, Kargo workload Values + RBAC via injection
                             ├────────── .applicationSets_config.yaml # ApplicationSet Configuration Value Injector for Kargo labels
                             └────────── values.yaml                  # Target applicationset generators, and default overrides
 
