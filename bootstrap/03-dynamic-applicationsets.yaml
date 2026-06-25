@@ -5,10 +5,7 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "-980"
-  labels:
-    ctw.ca/argo-project: "{{index .path.segments 1}}"
-    ctw.ca/kargo-stack: "{{index .path.segments 2}}"
-    ctw.ca/app-component: "{{index .path.segments 3}}"
+  labels: {}
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]

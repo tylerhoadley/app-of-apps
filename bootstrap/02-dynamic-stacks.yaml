@@ -6,9 +6,6 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "-990"
     kargo.akuity.io/authorized-stage: "dynamic-stacks-project:argocd-sync-and-wait"
-  labels:
-    ctw.ca/argo-project: "{{index .path.segments 1}}"
-    ctw.ca/kargo-stack: "{{index .path.segments 2}}"
   labels: {}
 spec:
   goTemplate: true
