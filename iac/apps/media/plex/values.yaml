@@ -3,9 +3,11 @@ generators:
       elements:
         - appName: plex
           env: live
+          # repoURL: git@github.com:tylerhoadley/app-of-apps.git
+          # targetRevision: main
           repoURL: https://github.com/argoproj/argocd-example-apps.git
           targetRevision: HEAD
-          # path: guestbook
+          path: guestbook
           # cluster: in-cluster
           autoSync: true
           prune: false
