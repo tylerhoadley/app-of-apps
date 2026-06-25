@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: dynamic-applicationsets-helm
+  name: dynamic-applicationsets
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "-980"
@@ -18,7 +18,7 @@ spec:
     preserveResourcesOnDeletion: true 
   template:
     metadata:
-      name: '{{index .path.segments 2}}-{{ .path.basename }}-helm'
+      name: '{{index .path.segments 2}}-{{ .path.basename }}-sets'
       labels:
         ctw.ca/argo-project: "{{index .path.segments 1}}"
         ctw.ca/kargo-stack: "{{index .path.segments 2}}"
