@@ -5,6 +5,10 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "-980"
+  labels:
+    ctw.ca/argo-project: "{{index .path.segments 1}}"
+    ctw.ca/kargo-stack: "{{index .path.segments 2}}"
+    ctw.ca/app-component: "{{index .path.segments 3}}"
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
@@ -14,17 +18,18 @@ spec:
         revision: main
         files:
           - path: "iac/*/*/*/.applicationSets_config.yaml"
+  syncPolicy:
+    preserveResourcesOnDeletion: true 
   template:
     metadata:
       name: '{{index .path.segments 2}}-{{ .path.basename }}-helm'
       labels:
-        ctw.ca/platform-project: "{{index .path.segments 1}}"
-        ctw.ca/kargo-stack:     "{{index .path.segments 2}}"
-        ctw.ca/app-component:   "{{index .path.segments 3}}"
+        ctw.ca/argo-project: "{{index .path.segments 1}}"
+        ctw.ca/kargo-stack: "{{index .path.segments 2}}"
+        ctw.ca/app-component: "{{index .path.segments 3}}"
         ctw.ca/finops-cost-center: "cc-{{index .path.segments 1}}-{{index .path.segments 2}}"
       annotations:
         argocd.argoproj.io/sync-wave: "-5"
-        kargo.akuity.io/authorized-stage: "REPLACE"
     spec:
       project: '{{index .path.segments 1}}'
       destination:
@@ -40,10 +45,14 @@ spec:
             wildcard-ctw-ca: tls
             dockerhub: registry
             gitlab: registry
+            ctw.ca/argo-project: "{{index .path.segments 1}}"
+            ctw.ca/kargo-stack: "{{index .path.segments 2}}"
+            ctw.ca/app-component: "{{index .path.segments 3}}"
           annotations:
             argocd.argoproj.io/sync-wave: "-190"
             kargo.akuity.io/authorized-stage: >-
               {{ index .path.segments 2 }}:app-revision-sync
+              ,{{ index .path.segments 2 }}:argocd-sync-and-wait
               {{- if hasKey . "authorized_stage" -}}
                 {{- range .authorized_stage -}}
                   ,{{ index $.path.segments 2 }}:{{ . }}
@@ -69,6 +78,8 @@ spec:
               goTemplate: true
               goTemplateOptions:
                 - missingkey=error
+              syncPolicy:
+                preserveResourcesOnDeletion: true 
               template:
                 spec:
                   {{ if .autoSource }}
@@ -83,4 +94,15 @@ spec:
                     automated:
                       prune: false
                       selfHeal: false
-
+                      enabled: false
+                    managedNamespaceMetadata:
+                      labels: 
+                        wildcard-ctw-ca: tls
+                        dockerhub: registry
+                        gitlab: registry
+                      annotations:
+                        argocd.argoproj.io/sync-wave: "-190"
+                        ctw.ca/argo-project: "{{index .path.segments 1}}"
+                        ctw.ca/kargo-stack: '{{index .path.segments 2}}'
+                        ctw.ca/app-component: '{{index .path.segments 3}}'
+                        ctw.ca/finops-cost-center: "cc-{{index .path.segments 1}}-{{index .path.segments 2}}"

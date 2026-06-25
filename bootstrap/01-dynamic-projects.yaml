@@ -5,7 +5,7 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "-1000"
-    # kargo.akuity.io/authorized-stage: "dynamic-projects-project:app-revision-sync"
+  labels: {}
 spec:
   goTemplate: true
   goTemplateOptions:
@@ -23,11 +23,9 @@ spec:
     metadata:
       name: '{{ .path.basename }}-pt'
       namespace: argocd
+      annotations: {}
       labels:
         ctw.ca/platform-project: "{{ .path.basename }}"
-      annotations:
-        kargo.akuity.io/authorized-stage: "REPLACE"
-        # kargo.akuity.io/authorized-stage: "{{index .path.segments 1}}-{{ .path.basename }}-sk:argocd-sync-and-wait"
     spec:
       project: default
       destination:
@@ -49,7 +47,6 @@ spec:
             kargo.akuity.io/project: 'true'
             wildcard-ctw-ca: tls
           annotations:
-            reloader.stakater.com/auto: 'true'
             argocd.argoproj.io/sync-wave: "-200"
       source:
         repoURL: https://argoproj.github.io/argo-helm

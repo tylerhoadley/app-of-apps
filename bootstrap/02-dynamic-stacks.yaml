@@ -6,6 +6,10 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "-990"
     kargo.akuity.io/authorized-stage: "dynamic-stacks-project:argocd-sync-and-wait"
+  labels:
+    ctw.ca/argo-project: "{{index .path.segments 1}}"
+    ctw.ca/kargo-stack: "{{index .path.segments 2}}"
+  labels: {}
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
@@ -15,15 +19,17 @@ spec:
         revision: main
         files:
           - path: "iac/*/*/.kargoProject_config.yaml"
+  syncPolicy:
+    preserveResourcesOnDeletion: true 
   template:
     metadata:
       name: '{{index .path.segments 1}}-{{ .path.basename }}-project'
       namespace: argocd
       labels:
+        ctw.ca/argo-project: "{{index .path.segments 1}}"
         ctw.ca/kargo-stack: "{{index .path.segments 1}}-{{ .path.basename }}-project"
       annotations:
         argocd.argoproj.io/sync-wave: "-10"
-        kargo.akuity.io/authorized-stage: "REPLACE"
     spec:
       project: '{{index .path.segments 1}}'
       destination:
@@ -38,6 +44,8 @@ spec:
           selfHeal: true
         managedNamespaceMetadata:
           labels: 
+            ctw.ca/argo-project: "{{index .path.segments 1}}"
+            ctw.ca/kargo-stack: "{{index .path.segments 1}}-{{ .path.basename }}-project"
             wildcard-ctw-ca: tls
             dockerhub: registry
             gitlab: registry
@@ -48,6 +56,9 @@ spec:
             kargo.akuity.io/project: "true"
           annotations:
             argocd.argoproj.io/sync-wave: "-195"
+            kargo.akuity.io/authorized-stage: >-
+              dynamic-stacks--project:argocd-sync-and-wait
+
       sources:
         - repoURL: https://charts.computersthatwork.ca
           chart: kargo-apps
