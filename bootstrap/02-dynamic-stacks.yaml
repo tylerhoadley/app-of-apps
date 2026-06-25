@@ -6,7 +6,6 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "-990"
     kargo.akuity.io/authorized-stage: "dynamic-stacks-project:argocd-sync-and-wait"
-  labels: {}
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]

@@ -5,7 +5,6 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "-1000"
-  labels: {}
 spec:
   goTemplate: true
   goTemplateOptions:
@@ -23,7 +22,6 @@ spec:
     metadata:
       name: '{{ .path.basename }}-pt'
       namespace: argocd
-      annotations: {}
       labels:
         ctw.ca/platform-project: "{{ .path.basename }}"
     spec:
