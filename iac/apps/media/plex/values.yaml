@@ -9,9 +9,9 @@ generators:
           targetRevision: HEAD
           path: guestbook
           # cluster: in-cluster
-          autoSync: true
+          autoSync: false
           prune: false
-          selfHeal: true
+          selfHeal: false
           
         # - appName: backup
         #   env: dev
