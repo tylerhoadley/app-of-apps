@@ -3,11 +3,11 @@ generators:
       elements:
         - appName: plex
           env: live
-          # repoURL: git@github.com:tylerhoadley/app-of-apps.git
-          # targetRevision: main
-          repoURL: https://github.com/argoproj/argocd-example-apps.git
-          targetRevision: HEAD
-          path: guestbook
+          repoURL: git@github.com:tylerhoadley/app-of-apps.git
+          targetRevision: main
+          # repoURL: https://github.com/argoproj/argocd-example-apps.git
+          # targetRevision: HEAD
+          path: config/apps/media/plex
           # cluster: in-cluster
           autoSync: false
           prune: false
