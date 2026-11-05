@@ -120,7 +120,7 @@ jobs:
             sleep 4
           done
 
-      - - name: Correlate and Distribute Manifests into ./iac Tree
+      - name: Correlate and Distribute Manifests into ./iac Tree
         run: |
           set -euo pipefail
 
