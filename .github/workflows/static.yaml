@@ -73,11 +73,11 @@ jobs:
           $(echo "$ARGO_GITHUB_TOKEN" | sed 's/^/    /')
           EOF
 
-      - name: Install Argo CD Core Control Plane
+      - name: Install Argo CD Core Control Plane (v3.5.7)
         run: |
           set -euo pipefail
-          echo "Installing Argo CD core manifests..."
-          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.0/manifests/core-install.yaml
+          echo "Installing Argo CD v3.5.7 core manifests..."
+          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.7/manifests/core-install.yaml
 
           echo "Awaiting ApplicationSet controller availability..."
           kubectl rollout status deployment/argocd-applicationset-controller -n argocd --timeout=120s
