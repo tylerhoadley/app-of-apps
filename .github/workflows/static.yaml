@@ -309,6 +309,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Configure Git author identity
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
@@ -327,10 +328,12 @@ jobs:
           find /tmp/rendered-iac -name ".*_config.yaml" -delete
           find /tmp/rendered-iac -name "RENDER_DEBUG.txt" -delete
 
+          # Fetch remote tracking branch index cleanly to prevent PR merge block
+          git fetch origin static:static || true
+
           # 3. Switch cleanly to static (or create an empty branch if static does not exist)
           BRANCH_NAME="sync/rendered-static-manifests"
           if git ls-remote --exit-code --heads origin static > /dev/null 2>&1; then
-            git fetch origin static:static
             git checkout static
             # Wipe working tree so obsolete/pruned apps are removed
             git rm -rf . > /dev/null 2>&1 || true
@@ -360,12 +363,12 @@ jobs:
           # 8. Stage everything in iac/ (captures additions, edits, deletions, and markdown files)
           git add -A iac/
 
-          if git diff --cached --quiet; then
+          if [ -z "$(git status --porcelain)" ]; then
             echo "No differences found between newly rendered manifests and existing static branch."
             exit 0
           fi
 
-          # 9. Commit and push the clean snapshot
+          # 9. Commit and force-push the clean snapshot
           git commit -m "chore(gitops): synchronize static manifests (prune obsolete, add new)"
           git push -u origin "$BRANCH_NAME" --force
 
