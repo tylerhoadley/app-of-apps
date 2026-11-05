@@ -120,7 +120,7 @@ jobs:
             sleep 4
           done
 
-      - name: Correlate and Distribute Manifests into ./iac Hierarchy
+      - - name: Correlate and Distribute Manifests into ./iac Tree
         run: |
           set -euo pipefail
 
@@ -145,11 +145,8 @@ jobs:
           # -------------------------------------------------------------
           echo "Exporting AppProjects..."
           for proj in $(kubectl get appprojects.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
-            if [ "$proj" = "default" ]; then
-              continue
-            fi
+            if [ "$proj" = "default" ]; then continue; fi
 
-            # Locate root project directory in iac/ (case-insensitive fallback)
             TARGET_DIR=""
             if [ -d "iac/$proj" ]; then
               TARGET_DIR="iac/$proj"
@@ -160,17 +157,14 @@ jobs:
             if [ -n "$TARGET_DIR" ] && [ -d "$TARGET_DIR" ]; then
               echo "Writing AppProject: $proj -> $TARGET_DIR/appproject.yaml"
               kubectl get appproject.argoproj.io "$proj" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/appproject.yaml"
-            else
-              echo "::warning ::Could not locate root folder for AppProject: $proj"
             fi
           done
 
           # -------------------------------------------------------------
           # 2. PROCESS APPLICATIONSETS (Target: iac/<project>/<stack>/applicationset.yaml)
           # -------------------------------------------------------------
-          echo "Exporting Nested ApplicationSets..."
+          echo "Exporting ApplicationSets..."
           for appset in $(kubectl get applicationsets.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
-            # Extract configured generator path if available
             GEN_PATH=$(kubectl get applicationset.argoproj.io "$appset" -n argocd -o jsonpath='{.spec.generators[0].git.directories[0].path}' 2>/dev/null || true)
             
             TARGET_SET_DIR=""
@@ -188,15 +182,13 @@ jobs:
             if [ -n "$TARGET_SET_DIR" ] && [ -d "$TARGET_SET_DIR" ]; then
               echo "Writing ApplicationSet: $appset -> $TARGET_SET_DIR/applicationset.yaml"
               kubectl get applicationset.argoproj.io "$appset" -n argocd -o yaml | sanitize_manifest > "$TARGET_SET_DIR/applicationset.yaml"
-            else
-              echo "::warning ::Could not locate directory for ApplicationSet: $appset"
             fi
           done
 
           # -------------------------------------------------------------
           # 3. PROCESS APPLICATIONS (Target: iac/<project>/<stack>/<app>/application.yaml)
           # -------------------------------------------------------------
-          echo "Exporting Static Applications..."
+          echo "Exporting Applications..."
           for app in $(kubectl get applications.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
             SRC_PATH=$(kubectl get application.argoproj.io "$app" -n argocd -o jsonpath='{.spec.source.path}' 2>/dev/null || true)
             
@@ -212,34 +204,24 @@ jobs:
             if [ -n "$TARGET_APP_DIR" ] && [ -d "$TARGET_APP_DIR" ]; then
               echo "Writing Application: $app -> $TARGET_APP_DIR/application.yaml"
               kubectl get application.argoproj.io "$app" -n argocd -o yaml | sanitize_manifest > "$TARGET_APP_DIR/application.yaml"
-            else
-              echo "::warning ::Could not locate leaf folder for Application: $app"
             fi
           done
 
-      - name: Verify Git Status
-        id: git_status
+      - name: Inspect Generated Files
         run: |
-          git status --short
-          echo "has_changes=$(git status --porcelain | wc -l)" >> "$GITHUB_OUTPUT"
+          echo "=== Git Working Tree Status ==="
+          git status
+          echo "=== Untracked or Modified YAMLs in iac/ ==="
+          find iac -name "*.yaml" -o -name "*.yml"
 
       - name: Create Pull Request to static Branch
-        if: steps.git_status.outputs.has_changes > 0
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore(gitops): render dynamic templates into static manifests"
           title: "Promote Rendered Static Manifests to static"
           body: |
-            ### Automated Static Manifest Promotion
-            
-            This pull request synchronizes the static representations of all dynamic resources rendered by Argo CD:
-            
-            - **Level 1:** Rendered `AppProjects` distributed to `iac/<project>/appproject.yaml`[cite: 1].
-            - **Level 2:** Rendered `ApplicationSets` distributed to `iac/<project>/<stack>/applicationset.yaml`[cite: 1].
-            - **Level 3:** Rendered `Applications` distributed to `iac/<project>/<stack>/<app>/application.yaml`[cite: 1].
-            - **Exclusions:** Resources tagged with `dynamic: template` and `.noload` files were skipped.
-            - **Sanitization:** Runtime metadata (`status`, `ownerReferences`, `resourceVersion`, `uid`) has been stripped to prevent deletion cascading.
+            Automated PR containing static manifests rendered from `main` into `./iac` hierarchy.
           branch: sync/rendered-static-manifests
           base: static
           delete-branch: true
