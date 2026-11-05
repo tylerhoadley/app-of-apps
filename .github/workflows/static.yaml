@@ -47,8 +47,8 @@ jobs:
 
       - name: Configure Repository Authentication
         env:
-          ARGO_GIT_URL: ${{ secrets.ARGO_GIT_URL }}
-          ARGO_GITHUB_TOKEN: ${{ secrets.ARGO_GITHUB_TOKEN }}
+          ARGO_GIT_URL_BASE64: ${{ secrets.ARGO_GIT_URL_BASE64 }}
+          ARGO_GITHUB_TOKEN_BASE64: ${{ secrets.ARGO_GITHUB_TOKEN_BASE64 }}
         run: |
           set -euo pipefail
           echo "Populating Argo CD SSH known_hosts..."
@@ -67,10 +67,11 @@ jobs:
               argocd.argoproj.io/secret-type: repo-creds
           stringData:
             type: git
-            url: "${ARGO_GIT_URL}"
+            name: ssh-github-creds
             insecureIgnoreHostKey: "true"
-            sshPrivateKey: |
-          $(echo "$ARGO_GITHUB_TOKEN" | sed 's/^/    /')
+          data:
+            url: "${ARGO_GIT_URL_BASE64}"
+            sshPrivateKey: "${$ARGO_GITHUB_TOKEN_BASE64"
           EOF
 
       - name: Install Argo CD Core Control Plane (v3.5.7)
