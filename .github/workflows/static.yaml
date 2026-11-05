@@ -39,15 +39,11 @@ jobs:
           cluster_name: argocd-render-engine
           wait: 120s
 
-      - name: Install Argo CD Core Control Plane
+      - name: Create Argo CD Namesapce
         run: |
           set -euo pipefail
           echo "Installing Argo CD core manifests..."
           kubectl create namespace argocd
-          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.7/manifests/core-install.yaml
-
-          echo "Awaiting ApplicationSet controller availability..."
-          kubectl rollout status deployment/argocd-applicationset-controller -n argocd --timeout=120s
 
       - name: Configure Repository Authentication
         env:
@@ -64,11 +60,22 @@ jobs:
             labels:
               argocd.argoproj.io/secret-type: repo-creds
           stringData:
+            insecureIgnoreHostKey: true
+            name: ssh-github-creds
             type: git
-            url: "${REPO_URL}"
-            password: "${GH_TOKEN}"
-            username: "git"
+            url: "${ARGO_GIT_URL}"
+            sshPrivateKey: "${ARGO_GITHUB_TOKEN}"
+
           EOF
+
+      - name: Install Argo CD Core Control Plane
+        run: |
+          set -euo pipefail
+          echo "Installing Argo CD core manifests..."
+          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.7/manifests/core-install.yaml
+
+          echo "Awaiting ApplicationSet controller availability..."
+          kubectl rollout status deployment/argocd-applicationset-controller -n argocd --timeout=120s
 
       - name: Stage 1 - Apply & Reconcile AppProjects
         run: |
