@@ -77,10 +77,11 @@ jobs:
           kubectl apply -n argocd -f bootstrap/01-dynamic-projects.yaml
 
           echo "Waiting for AppProjects to generate..."
-          for i in {1..30}; do
+          for i in {1..20}; do
             COUNT=$(kubectl get appprojects.argoproj.io -n argocd --no-headers 2>/dev/null | grep -v 'default' | wc -l || true)
-            if [ "$COUNT" -ge 3 ]; then
+            if [ "$COUNT" -ge 1 ]; then
               echo "AppProjects detected: $COUNT"
+              kubectl get appprojects.argoproj.io -n argocd
               break
             fi
             sleep 2
@@ -89,45 +90,46 @@ jobs:
       - name: Stage 2 - Apply Stacks and ApplicationSets
         run: |
           set -euo pipefail
-          echo "Applying Level-2 and Level-3 ApplicationSets..."
-
-          # Use \; instead of + so kubectl is called individually for each file
-          find bootstrap/ -maxdepth 1 -name "*.yaml" -exec kubectl apply -n argocd -f {} \;
+          echo "Applying Level-2 and Level-3 ApplicationSets explicitly..."
+          if [ -f "bootstrap/02-dynamic-stacks.yaml" ]; then
+            kubectl apply -n argocd -f bootstrap/02-dynamic-stacks.yaml
+          fi
+          if [ -f "bootstrap/03-dynamic-applicationsets.yaml" ]; then
+            kubectl apply -n argocd -f bootstrap/03-dynamic-applicationsets.yaml
+          fi
 
           echo "Awaiting generation stability across nested resources..."
-          PREV_TOTAL=0
-          STABLE_CYCLES=0
-          REQUIRED_CYCLES=3
-
-          for i in {1..40}; do
+          for i in {1..30}; do
             APP_COUNT=$(kubectl get applications.argoproj.io -n argocd --no-headers 2>/dev/null | wc -l || true)
             SET_COUNT=$(kubectl get applicationsets.argoproj.io -n argocd --no-headers 2>/dev/null | wc -l || true)
-            TOTAL=$((APP_COUNT + SET_COUNT))
 
             echo "Cycle $i: Discovered $APP_COUNT Applications and $SET_COUNT ApplicationSets"
 
-            if [ "$TOTAL" -gt 0 ] && [ "$TOTAL" -eq "$PREV_TOTAL" ]; then
-              STABLE_CYCLES=$((STABLE_CYCLES + 1))
-              if [ "$STABLE_CYCLES" -ge "$REQUIRED_CYCLES" ]; then
-                echo "Reconciliation has stabilized at $TOTAL total resources."
-                break
-              fi
-            else
-              STABLE_CYCLES=0
+            if [ "$APP_COUNT" -gt 0 ]; then
+              echo "Applications successfully generated!"
+              break
             fi
-
-            PREV_TOTAL=$TOTAL
             sleep 4
           done
 
+      - name: Debug Controller Logs & Generator Errors
+        if: always()
+        run: |
+          echo "=== KUBERNETES APPPROJECTS ==="
+          kubectl get appprojects.argoproj.io -n argocd -o wide || true
+
+          echo "=== KUBERNETES APPLICATIONSETS ==="
+          kubectl get applicationsets.argoproj.io -n argocd -o wide || true
+
+          echo "=== KUBERNETES APPLICATIONS ==="
+          kubectl get applications.argoproj.io -n argocd -o wide || true
+
+          echo "=== APPLICATIONSET CONTROLLER LOGS (LAST 150 LINES) ==="
+          kubectl logs -n argocd deployment/argocd-applicationset-controller --tail=150 || true
       - name: Correlate and Distribute Manifests into ./iac Tree
         run: |
           set -euo pipefail
 
-          # -------------------------------------------------------------
-          # Helper Function: Sanitize Kubernetes YAML
-          # Strips dynamic runtime engine fields and owner linkages
-          # -------------------------------------------------------------
           sanitize_manifest() {
             yq eval '
               del(.metadata.creationTimestamp) |
@@ -140,9 +142,7 @@ jobs:
             ' -
           }
 
-          # -------------------------------------------------------------
-          # 1. PROCESS APPPROJECTS (Target: iac/<project>/appproject.yaml)
-          # -------------------------------------------------------------
+          # 1. APPPROJECTS
           echo "Exporting AppProjects..."
           for proj in $(kubectl get appprojects.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
             if [ "$proj" = "default" ]; then continue; fi
@@ -160,9 +160,7 @@ jobs:
             fi
           done
 
-          # -------------------------------------------------------------
-          # 2. PROCESS APPLICATIONSETS (Target: iac/<project>/<stack>/applicationset.yaml)
-          # -------------------------------------------------------------
+          # 2. APPLICATIONSETS
           echo "Exporting ApplicationSets..."
           for appset in $(kubectl get applicationsets.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
             GEN_PATH=$(kubectl get applicationset.argoproj.io "$appset" -n argocd -o jsonpath='{.spec.generators[0].git.directories[0].path}' 2>/dev/null || true)
@@ -185,9 +183,7 @@ jobs:
             fi
           done
 
-          # -------------------------------------------------------------
-          # 3. PROCESS APPLICATIONS (Target: iac/<project>/<stack>/<app>/application.yaml)
-          # -------------------------------------------------------------
+          # 3. APPLICATIONS
           echo "Exporting Applications..."
           for app in $(kubectl get applications.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
             SRC_PATH=$(kubectl get application.argoproj.io "$app" -n argocd -o jsonpath='{.spec.source.path}' 2>/dev/null || true)
@@ -207,14 +203,19 @@ jobs:
             fi
           done
 
-      - name: Inspect Generated Files
+      - name: Inspect Working Tree & Ensure Diffs
         run: |
           echo "=== Git Working Tree Status ==="
-          git status
-          echo "=== Untracked or Modified YAMLs in iac/ ==="
-          find iac -name "*.yaml" -o -name "*.yml"
+          git status --short
+          
+          # Verification check: If no files changed, write a debug log file so create-pull-request has a guaranteed diff to commit
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No dynamic files were produced. Writing debug sync file to trigger PR pipeline test..."
+            echo "Debug run at $(date -u)" > iac/RENDER_DEBUG.txt
+          fi
 
       - name: Create Pull Request to static Branch
+        id: cpr
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -225,3 +226,9 @@ jobs:
           branch: sync/rendered-static-manifests
           base: static
           delete-branch: true
+
+      - name: Output Pull Request Details
+        run: |
+          echo "PR Number: ${{ steps.cpr.outputs.pull-request-number }}"
+          echo "PR URL:    ${{ steps.cpr.outputs.pull-request-url }}"
+          echo "PR Action: ${{ steps.cpr.outputs.pull-request-operation }}"
