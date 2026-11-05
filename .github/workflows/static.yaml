@@ -65,7 +65,7 @@ jobs:
           apiVersion: v1
           kind: Secret
           metadata:
-            name: repo-credentials
+            name: ssh-github-creds
             namespace: argocd
             labels:
               argocd.argoproj.io/secret-type: repo-creds
@@ -90,11 +90,42 @@ jobs:
           echo "Awaiting ApplicationSet controller availability..."
           kubectl rollout status deployment/argocd-applicationset-controller -n argocd --timeout=120s
 
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash
+          helm pull oci://ghcr.io/akuity/kargo-charts/kargo --untar
+          kubectl apply --server-side --force-conflicts -f kargo/resources/crds/
+          rm -rf kargo
+
+          # echo "Applying bootstrap files via applciation"
+          # cat <<EOF | kubectl apply -n argocd -f -
+          # apiVersion: argoproj.io/v1alpha1
+          # kind: Application
+          # metadata:
+          #   name: bootstrap-github
+          # spec:
+          #   project: default
+          #   syncPolicy:
+          #     automated: {}
+          #   source:
+          #     repoURL: git@github.com:tylerhoadley/app-of-apps.git
+          #     targetRevision: main
+          #     path: bootstrap
+          #     directory:
+          #       recurse: true
+          #   destination:
+          #     server: https://kubernetes.default.svc
+          #     namespace: argocd
+          # EOF
+          # echo " sleep to let bootstrap catchup"
+          # sleep 60
+
       - name: Stage 1 - Apply & Reconcile AppProjects
         run: |
           set -euo pipefail
           echo "Applying Level-1 Project templates..."
           kubectl apply -n argocd -f bootstrap/01-dynamic-projects.yaml
+
+          kubectl get applicationset dynamic-projects -n argocd \
+            -o jsonpath='{range .status.conditions[*]}{"Type: "}{.type}{"\nStatus: "}{.status}{"\nReason: "}{.reason}{"\nMessage: "}{.message}{"\n---\n"}{end}'
 
           echo "Waiting for AppProjects to generate..."
           for i in {1..20}; do
@@ -106,6 +137,7 @@ jobs:
             fi
             sleep 2
           done
+          
 
       - name: Stage 2 - Apply Stacks and ApplicationSets
         run: |
@@ -114,9 +146,15 @@ jobs:
           if [ -f "bootstrap/02-dynamic-stacks.yaml" ]; then
             kubectl apply -n argocd -f bootstrap/02-dynamic-stacks.yaml
           fi
+          kubectl get applicationset dynamic-stacks -n argocd \
+            -o jsonpath='{range .status.conditions[*]}{"Type: "}{.type}{"\nStatus: "}{.status}{"\nReason: "}{.reason}{"\nMessage: "}{.message}{"\n---\n"}{end}'
+
           if [ -f "bootstrap/03-dynamic-applicationsets.yaml" ]; then
             kubectl apply -n argocd -f bootstrap/03-dynamic-applicationsets.yaml
           fi
+
+          kubectl get applicationset dynamic-applicationsets -n argocd \
+            -o jsonpath='{range .status.conditions[*]}{"Type: "}{.type}{"\nStatus: "}{.status}{"\nReason: "}{.reason}{"\nMessage: "}{.message}{"\n---\n"}{end}'
 
           echo "Awaiting generation stability across nested resources..."
           for i in {1..30}; do
