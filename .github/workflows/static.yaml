@@ -238,37 +238,34 @@ jobs:
                 ITEM_NS="${item%/*}"
                 ITEM_NAME="${item#*/}"
 
-                # Handle cluster-scoped items where namespace is empty
-                KUBECTL_FLAGS=("-n" "$ITEM_NS")
-                if [ -z "$ITEM_NS" ] || [ "$ITEM_NS" = "/" ]; then
-                  KUBECTL_FLAGS=()
+                # Query object YAML
+                if [ -n "$ITEM_NS" ] && [ "$ITEM_NS" != "/" ]; then
+                  RAW_YAML=$(kubectl get "$resource_type" "$ITEM_NAME" -n "$ITEM_NS" -o yaml 2>/dev/null || true)
+                else
+                  RAW_YAML=$(kubectl get "$resource_type" "$ITEM_NAME" -o yaml 2>/dev/null || true)
                 fi
 
-                # Fetch object JSON to inspect labels and kind
-                OBJ_JSON=$(kubectl get "$resource_type" "$ITEM_NAME" "${KUBECTL_FLAGS[@]}" -o json 2>/dev/null || true)
-                if [ -z "$OBJ_JSON" ]; then continue; fi
+                if [ -z "$RAW_YAML" ]; then continue; fi
 
                 # Skip root template generators if labeled with dynamic=template
-                LABEL_DYNAMIC=$(echo "$OBJ_JSON" | jq -r '.metadata.labels.dynamic // empty')
+                LABEL_DYNAMIC=$(echo "$RAW_YAML" | yq eval '.metadata.labels.dynamic // ""' -)
                 if [ "$LABEL_DYNAMIC" = "template" ]; then continue; fi
 
-                # Check if this resource belongs to the current stack (by name or namespace match)
+                # Check if this resource matches the stack name or parent-stack name
                 if [[ "$ITEM_NAME" == *"$STACK_NAME"* ]] || \
                    [[ "$ITEM_NAME" == *"$PARENT_DIR-$STACK_NAME"* ]] || \
                    [[ "$ITEM_NS" == *"$STACK_NAME"* ]] || \
                    [[ "$ITEM_NS" == *"$PARENT_DIR-$STACK_NAME"* ]]; then
 
-                  KIND=$(echo "$OBJ_JSON" | jq -r '.kind | ascii_downcase')
+                  KIND=$(echo "$RAW_YAML" | yq eval '.kind' - | tr '[:upper:]' '[:lower:]')
 
-                  # Output filename based on Kind (e.g. stage.yaml, projectconfig.yaml, warehouse.yaml, project.yaml)
-                  # If multiple objects of the same kind exist in the stack, suffix with item name
                   OUT_FILE="$TARGET_DIR/${KIND}.yaml"
                   if [ -f "$OUT_FILE" ]; then
                     OUT_FILE="$TARGET_DIR/${ITEM_NAME}.yaml"
                   fi
 
                   echo "  -> Writing Kargo [$KIND]: $ITEM_NAME -> $OUT_FILE"
-                  kubectl get "$resource_type" "$ITEM_NAME" "${KUBECTL_FLAGS[@]}" -o yaml | sanitize_manifest > "$OUT_FILE
+                  echo "$RAW_YAML" | sanitize_manifest > "$OUT_FILE"
                 fi
               done
             done
@@ -287,14 +284,12 @@ jobs:
             PARENT_STACK=$(basename "$(dirname "$TARGET_DIR")")
             echo "Checking Leaf ApplicationSet target: $APP_NAME (Stack: $PARENT_STACK) in $TARGET_DIR"
 
-            # 03-dynamic-applicationsets generates ApplicationSets for each leaf application folder
             for appset in $(kubectl get applicationsets.argoproj.io -n argocd -o jsonpath='{.items[*].metadata.name}'); do
               LABEL_DYNAMIC=$(kubectl get applicationset.argoproj.io "$appset" -n argocd -o jsonpath='{.metadata.labels.dynamic}' 2>/dev/null || true)
               if [ "$LABEL_DYNAMIC" = "template" ]; then
                 continue
               fi
 
-              # Matches generated ApplicationSets like 'media-plex-sets', 'threat-trivy-operator-sets'
               if [[ "$appset" == *"$APP_NAME"* ]]; then
                 echo "  -> Writing Leaf ApplicationSet: $appset -> $TARGET_DIR/$appset.yaml"
                 kubectl get applicationset.argoproj.io "$appset" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/$appset.yaml"
