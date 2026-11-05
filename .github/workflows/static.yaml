@@ -47,17 +47,21 @@ jobs:
 
       - name: Configure Repository Authentication
         env:
-          ARGO_GIT_URL: ${{ secrets.ARGO_GIT_URL }}
-          ARGO_GITHUB_TOKEN: ${{ secrets.ARGO_GITHUB_TOKEN }}
+          ARGO_GIT_URL_BASE64: ${{ secrets.ARGO_GIT_URL_BASE64 }}
+          ARGO_GITHUB_TOKEN_BASE64: ${{ secrets.ARGO_GITHUB_TOKEN_BASE64 }}
+          ARGO_GIT_NAME_BASE64: ${{ secrets.ARGO_GIT_NAME_BASE64 }}
+          ARGO_GIT_TYPE_BASE64: ${{ secrets.ARGO_GIT_TYPE_BASE64 }}
+          ARGO_GIT_HOSTKEY_BASE64: ${{ secrets.ARGO_GIT_HOSTKEY_BASE64 }}
         run: |
           set -euo pipefail
+
           echo "Populating Argo CD SSH known_hosts..."
           kubectl create configmap argocd-ssh-known-hosts-cm -n argocd \
             --from-literal=ssh_known_hosts="$(ssh-keyscan github.com 2>/dev/null)" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          echo "Applying SSH repository secret..."
-          cat << EOF | kubectl apply -n argocd -f -
+          echo "Applying SSH repository secret with base64 data..."
+          cat <<EOF | kubectl apply -n argocd -f -
           apiVersion: v1
           kind: Secret
           metadata:
@@ -65,13 +69,17 @@ jobs:
             namespace: argocd
             labels:
               argocd.argoproj.io/secret-type: repo-creds
-          stringData:
-            name: ssh-github-creds
-            type: git
-            url: "${ARGO_GIT_URL}"
-            insecureIgnoreHostKey: "true"
-            sshPrivateKey: "${$ARGO_GITHUB_TOKEN}"
+          data:
+            name: ${ARGO_GIT_NAME_BASE64}
+            type: ${ARGO_GIT_TYPE_BASE64}
+            url: ${ARGO_GIT_URL_BASE64}
+            insecureIgnoreHostKey: ${ARGO_GIT_HOSTKEY_BASE64}
+            sshPrivateKey: ${ARGO_GITHUB_TOKEN_BASE64}
           EOF
+
+          # Verification: Inspect decoded secret metadata in cluster without leaking private key
+          echo "Verifying created secret configuration..."
+          kubectl get secret repo-credentials -n argocd && echo ""
 
       - name: Install Argo CD Core Control Plane (v3.5.7)
         run: |
