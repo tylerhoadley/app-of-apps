@@ -39,18 +39,24 @@ jobs:
           cluster_name: argocd-render-engine
           wait: 120s
 
-      - name: Create Argo CD Namesapce
+      - name: Create Argo CD Namespace
         run: |
           set -euo pipefail
-          echo "Installing Argo CD core manifests..."
+          echo "Creating argocd namespace..."
           kubectl create namespace argocd
 
       - name: Configure Repository Authentication
         env:
-          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARGO_GIT_URL: ${{ secrets.ARGO_GIT_URL }}
+          ARGO_GITHUB_TOKEN: ${{ secrets.ARGO_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          echo "Populating Argo CD SSH known_hosts..."
+          kubectl create configmap argocd-ssh-known-hosts-cm -n argocd \
+            --from-literal=ssh_known_hosts="$(ssh-keyscan github.com 2>/dev/null)" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "Applying SSH repository secret..."
           cat <<EOF | kubectl apply -n argocd -f -
           apiVersion: v1
           kind: Secret
@@ -60,19 +66,18 @@ jobs:
             labels:
               argocd.argoproj.io/secret-type: repo-creds
           stringData:
-            insecureIgnoreHostKey: true
-            name: ssh-github-creds
             type: git
             url: "${ARGO_GIT_URL}"
-            sshPrivateKey: "${ARGO_GITHUB_TOKEN}"
-
+            insecureIgnoreHostKey: "true"
+            sshPrivateKey: |
+          $(echo "$ARGO_GITHUB_TOKEN" | sed 's/^/    /')
           EOF
 
       - name: Install Argo CD Core Control Plane
         run: |
           set -euo pipefail
           echo "Installing Argo CD core manifests..."
-          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.7/manifests/core-install.yaml
+          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.0/manifests/core-install.yaml
 
           echo "Awaiting ApplicationSet controller availability..."
           kubectl rollout status deployment/argocd-applicationset-controller -n argocd --timeout=120s
@@ -133,6 +138,7 @@ jobs:
 
           echo "=== APPLICATIONSET CONTROLLER LOGS (LAST 150 LINES) ==="
           kubectl logs -n argocd deployment/argocd-applicationset-controller --tail=150 || true
+
       - name: Correlate and Distribute Manifests into ./iac Tree
         run: |
           set -euo pipefail
@@ -215,7 +221,6 @@ jobs:
           echo "=== Git Working Tree Status ==="
           git status --short
           
-          # Verification check: If no files changed, write a debug log file so create-pull-request has a guaranteed diff to commit
           if [ -z "$(git status --porcelain)" ]; then
             echo "No dynamic files were produced. Writing debug sync file to trigger PR pipeline test..."
             echo "Debug run at $(date -u)" > iac/RENDER_DEBUG.txt
