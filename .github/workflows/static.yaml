@@ -47,8 +47,8 @@ jobs:
 
       - name: Configure Repository Authentication
         env:
-          ARGO_GIT_URL_BASE64: ${{ secrets.ARGO_GIT_URL_BASE64 }}
-          ARGO_GITHUB_TOKEN_BASE64: ${{ secrets.ARGO_GITHUB_TOKEN_BASE64 }}
+          ARGO_GIT_URL: ${{ secrets.ARGO_GIT_URL }}
+          ARGO_GITHUB_TOKEN: ${{ secrets.ARGO_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           echo "Populating Argo CD SSH known_hosts..."
@@ -57,7 +57,7 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
           echo "Applying SSH repository secret..."
-          cat <<EOF | kubectl apply -n argocd -f -
+          cat << EOF | kubectl apply -n argocd -f -
           apiVersion: v1
           kind: Secret
           metadata:
@@ -66,11 +66,10 @@ jobs:
             labels:
               argocd.argoproj.io/secret-type: repo-creds
           stringData:
-            type: git
             name: ssh-github-creds
+            type: git
+            url: "${ARGO_GIT_URL}"
             insecureIgnoreHostKey: "true"
-          data:
-            url: "${ARGO_GIT_URL_BASE64}"
             sshPrivateKey: "${$ARGO_GITHUB_TOKEN_BASE64}"
           EOF
 
