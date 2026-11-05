@@ -211,30 +211,66 @@ jobs:
           done < <(find iac -name ".appProject_config.yaml")
 
           # -------------------------------------------------------------
-          # STAGE 2: STACK APPLICATIONSETS (Level 2: matched by .kargoProject_config.yaml)
-          # Target: iac/<proj>/<stack>/<appset>.yaml
+          # STAGE 2: DYNAMIC KARGO MANIFESTS (matched by .kargoProject_config.yaml)
+          # Dynamically iterates all CRD kinds under *.kargo.akuity.io
+          # Target: iac/<proj>/<stack>/<kind>.yaml (or <name>.yaml)
           # -------------------------------------------------------------
           echo "=========================================================="
-          echo "STAGE 2: Exporting Stack ApplicationSets"
+          echo "STAGE 2: Exporting All Kargo Resources (kargo.akuity.io)"
           echo "=========================================================="
+
+          # 1. Discover all active resource types in the kargo.akuity.io API group
+          KARGO_RESOURCES=$(kubectl api-resources --api-group=kargo.akuity.io -o name 2>/dev/null | tr '\n' ' ' || true)
+          echo "Discovered Kargo API kinds: $KARGO_RESOURCES"
+
           while IFS= read -r marker; do
             TARGET_DIR=$(dirname "$marker")
             STACK_NAME=$(basename "$TARGET_DIR")
             PARENT_DIR=$(basename "$(dirname "$TARGET_DIR")")
             echo "Checking Stack: $STACK_NAME (Parent: $PARENT_DIR) in $TARGET_DIR"
 
-            for appset in $(kubectl get applicationsets.argoproj.io -n argocd -o jsonpath='{.items[*].metadata.name}'); do
-              LABEL_DYNAMIC=$(kubectl get applicationset.argoproj.io "$appset" -n argocd -o jsonpath='{.metadata.labels.dynamic}' 2>/dev/null || true)
-              if [ "$LABEL_DYNAMIC" = "template" ]; then
-                continue
-              fi
+            # 2. Iterate across every discovered Kargo resource type
+            for resource_type in $KARGO_RESOURCES; do
+              # Query all instances across all namespaces formatted as: namespace/name (or _cluster_/name for cluster-scoped)
+              ITEMS=$(kubectl get "$resource_type" -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{" "}{end}' 2>/dev/null || true)
 
-              # Match stack-level ApplicationSet
-              if [[ "$appset" == *"$STACK_NAME"* ]] || [[ "$appset" == *"$PARENT_DIR-$STACK_NAME"* ]]; then
-                echo "  -> Writing Stack ApplicationSet: $appset -> $TARGET_DIR/$appset.yaml"
-                kubectl get applicationset.argoproj.io "$appset" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/$appset.yaml"
-                break
-              fi
+              for item in $ITEMS; do
+                ITEM_NS="${item%/*}"
+                ITEM_NAME="${item#*/}"
+
+                # Handle cluster-scoped items where namespace is empty
+                KUBECTL_FLAGS=("-n" "$ITEM_NS")
+                if [ -z "$ITEM_NS" ] || [ "$ITEM_NS" = "/" ]; then
+                  KUBECTL_FLAGS=()
+                fi
+
+                # Fetch object JSON to inspect labels and kind
+                OBJ_JSON=$(kubectl get "$resource_type" "$ITEM_NAME" "${KUBECTL_FLAGS[@]}" -o json 2>/dev/null || true)
+                if [ -z "$OBJ_JSON" ]; then continue; fi
+
+                # Skip root template generators if labeled with dynamic=template
+                LABEL_DYNAMIC=$(echo "$OBJ_JSON" | jq -r '.metadata.labels.dynamic // empty')
+                if [ "$LABEL_DYNAMIC" = "template" ]; then continue; fi
+
+                # Check if this resource belongs to the current stack (by name or namespace match)
+                if [[ "$ITEM_NAME" == *"$STACK_NAME"* ]] || \
+                   [[ "$ITEM_NAME" == *"$PARENT_DIR-$STACK_NAME"* ]] || \
+                   [[ "$ITEM_NS" == *"$STACK_NAME"* ]] || \
+                   [[ "$ITEM_NS" == *"$PARENT_DIR-$STACK_NAME"* ]]; then
+
+                  KIND=$(echo "$OBJ_JSON" | jq -r '.kind | ascii_downcase')
+
+                  # Output filename based on Kind (e.g. stage.yaml, projectconfig.yaml, warehouse.yaml, project.yaml)
+                  # If multiple objects of the same kind exist in the stack, suffix with item name
+                  OUT_FILE="$TARGET_DIR/${KIND}.yaml"
+                  if [ -f "$OUT_FILE" ]; then
+                    OUT_FILE="$TARGET_DIR/${ITEM_NAME}.yaml"
+                  fi
+
+                  echo "  -> Writing Kargo [$KIND]: $ITEM_NAME -> $OUT_FILE"
+                  echo "$OBJ_JSON" | sanitize_manifest > "$OUT_FILE"
+                fi
+              done
             done
           done < <(find iac -name ".kargoProject_config.yaml")
 
