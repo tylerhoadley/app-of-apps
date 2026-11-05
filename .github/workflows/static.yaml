@@ -70,7 +70,7 @@ jobs:
             type: git
             url: "${ARGO_GIT_URL}"
             insecureIgnoreHostKey: "true"
-            sshPrivateKey: "${$ARGO_GITHUB_TOKEN_BASE64}"
+            sshPrivateKey: "${$ARGO_GITHUB_TOKEN}"
           EOF
 
       - name: Install Argo CD Core Control Plane (v3.5.7)
