@@ -79,7 +79,7 @@ jobs:
 
           # Verification: Inspect decoded secret metadata in cluster without leaking private key
           echo "Verifying created secret configuration..."
-          kubectl get secret repo-credentials -n argocd && echo ""
+          kubectl get secret ssh-github-creds -n argocd && echo ""
 
       - name: Install Argo CD Core Control Plane (v3.5.7)
         run: |
