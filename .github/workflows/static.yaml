@@ -185,7 +185,8 @@ jobs:
           }
 
           # -------------------------------------------------------------
-          # STAGE 1: APPPROJECTS (matched by .appProject_config.yaml)
+          # STAGE 1: APPPROJECTS (Level 1: matched by .appProject_config.yaml)
+          # Target: iac/<proj>/<proj>.yaml
           # -------------------------------------------------------------
           echo "=========================================================="
           echo "STAGE 1: Exporting AppProjects"
@@ -210,10 +211,11 @@ jobs:
           done < <(find iac -name ".appProject_config.yaml")
 
           # -------------------------------------------------------------
-          # STAGE 2: APPLICATIONSETS (matched by .kargoProject_config.yaml)
+          # STAGE 2: STACK APPLICATIONSETS (Level 2: matched by .kargoProject_config.yaml)
+          # Target: iac/<proj>/<stack>/<appset>.yaml
           # -------------------------------------------------------------
           echo "=========================================================="
-          echo "STAGE 2: Exporting ApplicationSets"
+          echo "STAGE 2: Exporting Stack ApplicationSets"
           echo "=========================================================="
           while IFS= read -r marker; do
             TARGET_DIR=$(dirname "$marker")
@@ -227,8 +229,9 @@ jobs:
                 continue
               fi
 
+              # Match stack-level ApplicationSet
               if [[ "$appset" == *"$STACK_NAME"* ]] || [[ "$appset" == *"$PARENT_DIR-$STACK_NAME"* ]]; then
-                echo "  -> Writing ApplicationSet: $appset -> $TARGET_DIR/$appset.yaml"
+                echo "  -> Writing Stack ApplicationSet: $appset -> $TARGET_DIR/$appset.yaml"
                 kubectl get applicationset.argoproj.io "$appset" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/$appset.yaml"
                 break
               fi
@@ -236,26 +239,29 @@ jobs:
           done < <(find iac -name ".kargoProject_config.yaml")
 
           # -------------------------------------------------------------
-          # STAGE 3: APPLICATIONS (matched by .applicationSets_config.yaml)
+          # STAGE 3: LEAF APPLICATIONSETS (Level 3: matched by .applicationSets_config.yaml)
+          # Target: iac/<proj>/<stack>/<app>/<appset>.yaml
           # -------------------------------------------------------------
           echo "=========================================================="
-          echo "STAGE 3: Exporting Leaf Applications"
+          echo "STAGE 3: Exporting Leaf ApplicationSets"
           echo "=========================================================="
           while IFS= read -r marker; do
             TARGET_DIR=$(dirname "$marker")
             APP_NAME=$(basename "$TARGET_DIR")
             PARENT_STACK=$(basename "$(dirname "$TARGET_DIR")")
-            echo "Checking App: $APP_NAME (Stack: $PARENT_STACK) in $TARGET_DIR"
+            echo "Checking Leaf ApplicationSet target: $APP_NAME (Stack: $PARENT_STACK) in $TARGET_DIR"
 
-            for app in $(kubectl get applications.argoproj.io -n argocd -o jsonpath='{.items[*].metadata.name}'); do
-              LABEL_DYNAMIC=$(kubectl get application.argoproj.io "$app" -n argocd -o jsonpath='{.metadata.labels.dynamic}' 2>/dev/null || true)
+            # 03-dynamic-applicationsets generates ApplicationSets for each leaf application folder
+            for appset in $(kubectl get applicationsets.argoproj.io -n argocd -o jsonpath='{.items[*].metadata.name}'); do
+              LABEL_DYNAMIC=$(kubectl get applicationset.argoproj.io "$appset" -n argocd -o jsonpath='{.metadata.labels.dynamic}' 2>/dev/null || true)
               if [ "$LABEL_DYNAMIC" = "template" ]; then
                 continue
               fi
 
-              if [[ "$app" == *"$APP_NAME"* ]]; then
-                echo "  -> Writing Application: $app -> $TARGET_DIR/$app.yaml"
-                kubectl get application.argoproj.io "$app" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/$app.yaml"
+              # Matches generated ApplicationSets like 'media-plex-sets', 'threat-trivy-operator-sets'
+              if [[ "$appset" == *"$APP_NAME"* ]]; then
+                echo "  -> Writing Leaf ApplicationSet: $appset -> $TARGET_DIR/$appset.yaml"
+                kubectl get applicationset.argoproj.io "$appset" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/$appset.yaml"
                 break
               fi
             done
@@ -270,21 +276,27 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 1. Back up generated iac/ tree outside of the git workspace
-          echo "Backing up rendered manifests..."
-          rm -rf /tmp/rendered-iac
+          # 1. Back up generated iac/ tree and .github/CODEOWNERS outside the git workspace
+          echo "Backing up rendered manifests and CODEOWNERS..."
+          rm -rf /tmp/rendered-iac /tmp/codeowners-backup
           cp -r iac /tmp/rendered-iac
 
-          # 2. Strip non-manifest config markers and debug files
+          if [ -f ".github/CODEOWNERS" ]; then
+            mkdir -p /tmp/codeowners-backup
+            cp .github/CODEOWNERS /tmp/codeowners-backup/CODEOWNERS
+          fi
+
+          # 2. Strip only the dynamic marker files and debug traces from the backup
+          # Retains all *.md / *.MD documentation files and raw values.yaml files
           find /tmp/rendered-iac -name ".*_config.yaml" -delete
           find /tmp/rendered-iac -name "RENDER_DEBUG.txt" -delete
 
-          # 3. Switch cleanly to static (or create an empty branch if static doesn't exist yet)
+          # 3. Switch cleanly to static (or create an empty branch if static does not exist)
           BRANCH_NAME="sync/rendered-static-manifests"
           if git ls-remote --exit-code --heads origin static > /dev/null 2>&1; then
             git fetch origin static:static
             git checkout static
-            # Wipe every file tracked in the repo to guarantee obsolete/pruned apps are deleted
+            # Wipe working tree so obsolete/pruned apps are removed
             git rm -rf . > /dev/null 2>&1 || true
           else
             echo "Remote 'static' branch not found. Initializing empty orphan branch..."
@@ -292,17 +304,24 @@ jobs:
             git rm -rf . > /dev/null 2>&1 || true
           fi
 
-          # 4. Clean untracked remnants
+          # 4. Clean any untracked leftover files
           git clean -fdx
 
-          # 5. Restore only the freshly rendered manifests
+          # 5. Restore clean rendered manifests
           mkdir -p iac
           cp -r /tmp/rendered-iac/* iac/
 
-          # 6. Branch out to staging branch for PR creation
+          # 6. Restore .github/CODEOWNERS if present
+          if [ -f "/tmp/codeowners-backup/CODEOWNERS" ]; then
+            mkdir -p .github
+            cp /tmp/codeowners-backup/CODEOWNERS .github/CODEOWNERS
+            git add .github/CODEOWNERS
+          fi
+
+          # 7. Branch out to staging branch for PR creation
           git checkout -B "$BRANCH_NAME"
 
-          # 7. Stage everything (Git tracks modifications, additions, and deletions)
+          # 8. Stage everything in iac/ (captures additions, edits, deletions, and markdown files)
           git add -A iac/
 
           if git diff --cached --quiet; then
@@ -310,11 +329,11 @@ jobs:
             exit 0
           fi
 
-          # 8. Commit and force-push the clean snapshot
+          # 9. Commit and push the clean snapshot
           git commit -m "chore(gitops): synchronize static manifests (prune obsolete, add new)"
           git push -u origin "$BRANCH_NAME" --force
 
-          # 9. Open or update PR against static
+          # 10. Open or update PR against static
           EXISTING_PR=$(gh pr list --base static --head "$BRANCH_NAME" --json number --jq '.[0].number')
           if [ -n "$EXISTING_PR" ]; then
             echo "Pull request #$EXISTING_PR updated with latest changes."
@@ -324,9 +343,7 @@ jobs:
               --base static \
               --head "$BRANCH_NAME" \
               --title "Promote Rendered Static Manifests to static" \
-              --body "Automated promotion containing solely static manifests under \`iac/\`. Pruned obsolete applications and updated active manifests." \
+              --body "Automated promotion containing solely static manifests and documentation under \`iac/\`." \
               | tail -n 1)
             echo "Created Pull Request: $NEW_PR_URL"
           fi
-
-
