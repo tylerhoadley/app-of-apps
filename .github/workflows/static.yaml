@@ -366,6 +366,8 @@ jobs:
           branch: sync/rendered-static-manifests
           base: static
           delete-branch: true
+          # Force clean branch recreation to avoid cherry-pick collisions
+          branch-suffix: timestamp
 
       - name: Output Pull Request Details
         run: |
