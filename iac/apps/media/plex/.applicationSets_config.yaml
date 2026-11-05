@@ -1,8 +1,0 @@
-authorized_stage:
-  - app-revision-sync
-  - iac-revision-sync
-  - performance-gates
-
-
-
-autoSource: false

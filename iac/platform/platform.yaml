@@ -1,0 +1,61 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  annotations: {}
+  name: platform
+  namespace: argocd
+spec:
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  destinations:
+    - namespace: '*'
+      server: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  orphanedResources:
+    warn: false
+  roles:
+    - description: Allow syncing dev and pilot apps from nonprod and its respective prod group
+      groups:
+        - Argo_Platform_NonProd
+        - Argo_Platform_Prod
+      name: pilot-dev-sync
+      policies:
+        - p, proj:platform:pilot-dev-sync, logs, get, platform/*, allow
+        - p, proj:platform:pilot-dev-sync, applications, get, platform/*, allow
+        - p, proj:platform:pilot-dev-sync, applicationsets, get, platform/*, allow
+        - p, proj:platform:pilot-dev-sync, applicationsets, list, platform/*, allow
+        - p, proj:platform:pilot-dev-sync, applications, sync, platform/*-feature, allow
+        - p, proj:platform:pilot-dev-sync, applications, sync, platform/*-dev, allow
+        - p, proj:platform:pilot-dev-sync, applications, sync, platform/*-pilot, allow
+        - p, proj:platform:pilot-dev-sync, applications, sync, platform/*-preview, allow
+        - p, proj:platform:pilot-dev-sync, override, applications, platform/*, allow
+        - p, proj:platform:pilot-dev-sync, applications, delete, platform/*-feature, allow
+        - p, proj:platform:pilot-dev-sync, applications, delete, platform/*-dev, allow
+        - p, proj:platform:pilot-dev-sync, applications, delete, platform/*-pilot, allow
+        - p, proj:platform:pilot-dev-sync, applications, delete, platform/*-preview, allow
+        - p, proj:platform:pilot-dev-sync, applications, action/apps/Deployment/restart, platform/*-feature, allow
+        - p, proj:platform:pilot-dev-sync, applications, action/apps/Deployment/restart, platform/*-dev, allow
+        - p, proj:platform:pilot-dev-sync, applications, action/apps/Deployment/restart, platform/*-pilot, allow
+        - p, proj:platform:pilot-dev-sync, applications, action/apps/Deployment/restart, platform/*-preview, allow
+        - p, proj:platform:pilot-dev-sync, applications, action/batch/CronJob/create-job, platform/*-feature, allow
+        - p, proj:platform:pilot-dev-sync, applications, action/batch/CronJob/create-job, platform/*-dev, allow
+        - p, proj:platform:pilot-dev-sync, applications, action/batch/CronJob/create-job, platform/*-pilot, allow
+        - p, proj:platform:pilot-dev-sync, applications, action/batch/CronJob/create-job, platform/*-preview, allow
+        - p, proj:platform:pilot-dev-sync, applications, update, platform/*-dev, allow
+        - p, proj:platform:pilot-dev-sync, exec, create, platform/*-feature, allow
+        - p, proj:platform:pilot-dev-sync, exec, create, platform/*-dev, allow
+        - p, proj:platform:pilot-dev-sync, exec, create, platform/*-pilot, allow
+        - p, proj:platform:pilot-dev-sync, exec, create, platform/*-preview, allow
+    - description: Allow syncing prod apps from prod group
+      groups:
+        - Argo_Platform_Prod
+      name: prod-sync
+      policies:
+        - p, proj:platform:prod-sync, logs, get, platform/*, allow
+        - p, proj:platform:prod-sync, applications, get, platform/*, allow
+        - p, proj:platform:prod-sync, applications, sync, platform/*, allow
+  sourceRepos:
+    - '*'
