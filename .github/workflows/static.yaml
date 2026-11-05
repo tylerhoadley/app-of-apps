@@ -268,7 +268,6 @@ jobs:
                   fi
 
                   echo "  -> Writing Kargo [$KIND]: $ITEM_NAME -> $OUT_FILE"
-                  echo "$OBJ_JSON" | sanitize_manifest > "$OUT_FILE"
                   kubectl get "$resource_type" "$ITEM_NAME" "${KUBECTL_FLAGS[@]}" -o yaml | sanitize_manifest > "$OUT_FILE
                 fi
               done
