@@ -1,0 +1,69 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  annotations: {}
+  name: main
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - appName: main
+            autoSync: true
+            cluster: in-cluster
+            env: live
+            path: guestbook
+            prune: false
+            repoURL: https://github.com/argoproj/argocd-example-apps.git
+            selfHeal: true
+            targetRevision: HEAD
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  template:
+    metadata:
+      name: '{{ .appName }}-{{ .env }}'
+    spec:
+      destination:
+        name: in-cluster
+        namespace: main
+      project: apps
+      source:
+        path: config/apps/site/main
+        repoURL: '{{ .repoURL }}'
+        targetRevision: '{{ .targetRevision }}'
+      syncPolicy:
+        automated:
+          enabled: false
+          prune: false
+          selfHeal: false
+        managedNamespaceMetadata:
+          annotations:
+            argocd.argoproj.io/sync-wave: "-190"
+            ctw.ca/app-component: main
+            ctw.ca/argo-project: apps
+            ctw.ca/finops-cost-center: cc-apps-site
+            ctw.ca/kargo-stack: site
+          labels:
+            dockerhub: registry
+            gitlab: registry
+            wildcard-ctw-ca: tls
+        syncOptions:
+          - CreateNamespace=true
+          - RespectIgnoreDifferences=true
+  templatePatch: |
+    spec:
+      syncPolicy:
+        {{- if .autoSync }}
+        automated:
+          enabled: true
+          prune: {{ .prune }}
+          selfHeal: {{ .selfHeal }}
+        {{- else }}
+        automated:
+          enabled: false
+          prune: {{ .prune }}
+          selfHeal: {{ .selfHeal }}
+        {{- end }}

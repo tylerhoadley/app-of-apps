@@ -1,0 +1,18 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  annotations: {}
+  labels:
+    app.kubernetes.io/instance: platform-observability-project
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kargo-apps
+    app.kubernetes.io/version: v1.10.7
+    helm.sh/chart: kargo-apps-0.0.4
+  name: platform-observability-project
+  namespace: platform-observability-project
+spec:
+  promotionPolicies:
+    - autoPromotionEnabled: true
+      stage: dev
+    - autoPromotionEnabled: false
+      stage: pilot

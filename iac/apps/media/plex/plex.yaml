@@ -1,0 +1,68 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  annotations: {}
+  name: plex
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - appName: plex
+            autoSync: false
+            env: live
+            path: config/apps/media/plex
+            prune: false
+            repoURL: git@github.com:tylerhoadley/app-of-apps.git
+            selfHeal: false
+            targetRevision: main
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  template:
+    metadata:
+      name: '{{ .appName }}-{{ .env }}'
+    spec:
+      destination:
+        name: in-cluster
+        namespace: plex
+      project: apps
+      source:
+        path: '{{ .path }}'
+        repoURL: '{{ .repoURL }}'
+        targetRevision: '{{ .targetRevision }}'
+      syncPolicy:
+        automated:
+          enabled: false
+          prune: false
+          selfHeal: false
+        managedNamespaceMetadata:
+          annotations:
+            argocd.argoproj.io/sync-wave: "-190"
+            ctw.ca/app-component: plex
+            ctw.ca/argo-project: apps
+            ctw.ca/finops-cost-center: cc-apps-media
+            ctw.ca/kargo-stack: media
+          labels:
+            dockerhub: registry
+            gitlab: registry
+            wildcard-ctw-ca: tls
+        syncOptions:
+          - CreateNamespace=true
+          - RespectIgnoreDifferences=true
+  templatePatch: |
+    spec:
+      syncPolicy:
+        {{- if .autoSync }}
+        automated:
+          enabled: true
+          prune: {{ .prune }}
+          selfHeal: {{ .selfHeal }}
+        {{- else }}
+        automated:
+          enabled: false
+          prune: {{ .prune }}
+          selfHeal: {{ .selfHeal }}
+        {{- end }}

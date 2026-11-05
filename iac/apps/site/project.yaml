@@ -1,0 +1,11 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  annotations: {}
+  labels:
+    app.kubernetes.io/instance: apps-site-project
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kargo-apps
+    app.kubernetes.io/version: v1.10.7
+    helm.sh/chart: kargo-apps-0.0.4
+  name: apps-site-project
