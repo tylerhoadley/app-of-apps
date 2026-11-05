@@ -85,7 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Installing Argo CD v3.5.7 core manifests..."
-          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.7/manifests/core-install.yaml
+          kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.7/manifests/install.yaml
 
           echo "Awaiting ApplicationSet controller availability..."
           kubectl rollout status deployment/argocd-applicationset-controller -n argocd --timeout=120s
