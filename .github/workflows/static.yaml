@@ -274,6 +274,8 @@ jobs:
               del(.metadata.uid) |
               del(.metadata.managedFields) |
               del(.metadata.ownerReferences) |
+              del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration") |
+              del(.metadata.annotations."argocd.argoproj.io/tracking-id") |
               del(.status) |
               (.. | select(key == "values" and tag == "!!str")) style="literal"
             ' -
