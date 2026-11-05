@@ -34,7 +34,7 @@ jobs:
         uses: mikefarah/yq@v4.44.1
 
       - name: Create Ephemeral KinD Cluster
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.15.2
         with:
           cluster_name: argocd-render-engine
           wait: 120s
@@ -90,8 +90,9 @@ jobs:
         run: |
           set -euo pipefail
           echo "Applying Level-2 and Level-3 ApplicationSets..."
-          # Apply only valid .yaml / .yml files, explicitly ignoring .noload files
-          find bootstrap/ -maxdepth 1 \( -name "02-*.yaml" -o -name "03-*.yaml" \) -exec kubectl apply -n argocd -f {} +
+
+          # Use \; instead of + so kubectl is called individually for each file
+          find bootstrap/ -maxdepth 1 -name "*.yaml" -exec kubectl apply -n argocd -f {} \;
 
           echo "Awaiting generation stability across nested resources..."
           PREV_TOTAL=0
