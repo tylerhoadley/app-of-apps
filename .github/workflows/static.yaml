@@ -274,7 +274,8 @@ jobs:
               del(.metadata.uid) |
               del(.metadata.managedFields) |
               del(.metadata.ownerReferences) |
-              del(.status)
+              del(.status) |
+              (.. | select(key == "values" and tag == "!!str")) style="literal"
             ' -
           }
 
