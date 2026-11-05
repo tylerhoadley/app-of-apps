@@ -354,20 +354,47 @@ jobs:
             echo "Debug run at $(date -u)" > iac/RENDER_DEBUG.txt
           fi
 
-      - name: Create Pull Request to static Branch
-        id: cpr
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore(gitops): render dynamic templates into static manifests"
-          title: "Promote Rendered Static Manifests to static"
-          body: |
-            Automated PR containing static manifests rendered from `main` into `./iac` hierarchy.
-          branch: sync/rendered-static-manifests
-          base: static
-          delete-branch: true
-          # Force clean branch recreation to avoid cherry-pick collisions
-          branch-suffix: timestamp
+      - name: Commit, Push, and Open Pull Request via GitHub CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Configure Git author identity
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if there are modified or untracked files
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes detected in workspace. Skipping PR creation."
+            exit 0
+          fi
+
+          BRANCH_NAME="sync/rendered-static-manifests"
+
+          # Switch to target branch locally or create a clean orphan/new branch
+          git checkout -B "$BRANCH_NAME"
+
+          # Stage all changes across iac/
+          git add iac/
+          git commit -m "chore(gitops): render dynamic templates into static manifests"
+
+          # Force-push the branch directly to GitHub (avoids cherry-pick divergence)
+          git push -u origin "$BRANCH_NAME" --force
+
+          # Check if a PR already exists from this branch to static
+          EXISTING_PR=$(gh pr list --base static --head "$BRANCH_NAME" --json number --jq '.[0].number')
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Pull request #$EXISTING_PR already exists and has been updated with the latest commit."
+          else
+            echo "Opening new pull request against 'static'..."
+            gh pr create \
+              --base static \
+              --head "$BRANCH_NAME" \
+              --title "Promote Rendered Static Manifests to static" \
+              --body "Automated PR containing static manifests rendered from \`main\` into the \`./iac\` hierarchy."
+          fi
 
       - name: Output Pull Request Details
         run: |
