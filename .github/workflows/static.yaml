@@ -170,7 +170,7 @@ jobs:
           # Strips runtime tracking metadata and formats multi-line YAML
           # -------------------------------------------------------------
           sanitize_manifest() {
-            yq eval '
+            yq eval -P '
               del(.metadata.creationTimestamp) |
               del(.metadata.generation) |
               del(.metadata.resourceVersion) |
@@ -269,6 +269,7 @@ jobs:
 
                   echo "  -> Writing Kargo [$KIND]: $ITEM_NAME -> $OUT_FILE"
                   echo "$OBJ_JSON" | sanitize_manifest > "$OUT_FILE"
+                  kubectl get "$resource_type" "$ITEM_NAME" "${KUBECTL_FLAGS[@]}" -o yaml | sanitize_manifest > "$OUT_FILE
                 fi
               done
             done
