@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  labels:
+    ctw.ca/app-component: trivy-operator
+    ctw.ca/argo-project: secuirty
+    ctw.ca/finops-cost-center: cc-secuirty-threat
+    ctw.ca/kargo-stack: threat
+  name: threat-trivy-operator-sets
+  namespace: argocd
+spec:
+  destination:
+    name: in-cluster
+    namespace: threat
+  project: secuirty
+  sources:
+    - ref: values
+      repoURL: git@github.com:tylerhoadley/app-of-apps.git
+      targetRevision: main
+    - chart: applicationsets
+      helm:
+        releaseName: trivy-operator
+        valueFiles:
+          - $values/iac/secuirty/threat/trivy-operator/values.yaml
+        values: "namespace: argocd\ngoTemplate: true\ngoTemplateOptions:\n  - missingkey=error\nsyncPolicy:\n  preserveResourcesOnDeletion: true \ntemplate:\n  spec:\n    \n    source:\n      path: 'config/secuirty/threat/trivy-operator'\n    \n    project: 'secuirty'\n    destination:\n      name: in-cluster\n      namespace: 'trivy-operator'\n    syncPolicy:\n      automated:\n        prune: false\n        selfHeal: false\n        enabled: false\n      managedNamespaceMetadata:\n        labels: \n          wildcard-ctw-ca: tls\n          dockerhub: registry\n          gitlab: registry\n        annotations:\n          argocd.argoproj.io/sync-wave: \"-190\"\n          ctw.ca/argo-project: \"secuirty\"\n          ctw.ca/kargo-stack: 'threat'\n          ctw.ca/app-component: 'trivy-operator'\n          ctw.ca/finops-cost-center: \"cc-secuirty-threat\"\n"
+      repoURL: https://charts.computersthatwork.ca
+      targetRevision: 2.0.5
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+    managedNamespaceMetadata:
+      annotations:
+        argocd.argoproj.io/sync-wave: "-190"
+        kargo.akuity.io/authorized-stage: threat:app-revision-sync ,threat:argocd-sync-and-wait,threat:app-revision-sync,threat:iac-revision-sync,threat:performance-gates
+      labels:
+        ctw.ca/app-component: trivy-operator
+        ctw.ca/argo-project: secuirty
+        ctw.ca/kargo-stack: threat
+        dockerhub: registry
+        gitlab: registry
+        wildcard-ctw-ca: tls

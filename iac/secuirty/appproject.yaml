@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  annotations:
+    argocd.argoproj.io/tracking-id: secuirty-pt:argoproj.io/AppProject:argocd/secuirty
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"argoproj.io/v1alpha1","kind":"AppProject","metadata":{"annotations":{"argocd.argoproj.io/tracking-id":"secuirty-pt:argoproj.io/AppProject:argocd/secuirty"},"name":"secuirty","namespace":"argocd"},"spec":{"clusterResourceWhitelist":[{"group":"*","kind":"*"}],"destinations":[{"namespace":"*","server":"*"}],"namespaceResourceWhitelist":[{"group":"*","kind":"*"}],"orphanedResources":{"warn":false},"roles":[{"description":"Allow syncing dev and pilot apps from nonprod and its respective prod group","groups":["Argo_Platform_NonProd","Argo_Platform_Prod"],"name":"pilot-dev-sync","policies":["p, proj:secuirty:pilot-dev-sync, logs, get, secuirty/*, allow","p, proj:secuirty:pilot-dev-sync, applications, get, secuirty/*, allow","p, proj:secuirty:pilot-dev-sync, applicationsets, get, secuirty/*, allow","p, proj:secuirty:pilot-dev-sync, applicationsets, list, secuirty/*, allow","p, proj:secuirty:pilot-dev-sync, applications, sync, secuirty/*-feature, allow","p, proj:secuirty:pilot-dev-sync, applications, sync, secuirty/*-dev, allow","p, proj:secuirty:pilot-dev-sync, applications, sync, secuirty/*-pilot, allow","p, proj:secuirty:pilot-dev-sync, applications, sync, secuirty/*-preview, allow","p, proj:secuirty:pilot-dev-sync, override, applications, secuirty/*, allow","p, proj:secuirty:pilot-dev-sync, applications, delete, secuirty/*-feature, allow","p, proj:secuirty:pilot-dev-sync, applications, delete, secuirty/*-dev, allow","p, proj:secuirty:pilot-dev-sync, applications, delete, secuirty/*-pilot, allow","p, proj:secuirty:pilot-dev-sync, applications, delete, secuirty/*-preview, allow","p, proj:secuirty:pilot-dev-sync, applications, action/apps/Deployment/restart, secuirty/*-feature, allow","p, proj:secuirty:pilot-dev-sync, applications, action/apps/Deployment/restart, secuirty/*-dev, allow","p, proj:secuirty:pilot-dev-sync, applications, action/apps/Deployment/restart, secuirty/*-pilot, allow","p, proj:secuirty:pilot-dev-sync, applications, action/apps/Deployment/restart, secuirty/*-preview, allow","p, proj:secuirty:pilot-dev-sync, applications, action/batch/CronJob/create-job, secuirty/*-feature, allow","p, proj:secuirty:pilot-dev-sync, applications, action/batch/CronJob/create-job, secuirty/*-dev, allow","p, proj:secuirty:pilot-dev-sync, applications, action/batch/CronJob/create-job, secuirty/*-pilot, allow","p, proj:secuirty:pilot-dev-sync, applications, action/batch/CronJob/create-job, secuirty/*-preview, allow","p, proj:secuirty:pilot-dev-sync, applications, update, secuirty/*-dev, allow","p, proj:secuirty:pilot-dev-sync, exec, create, secuirty/*-feature, allow","p, proj:secuirty:pilot-dev-sync, exec, create, secuirty/*-dev, allow","p, proj:secuirty:pilot-dev-sync, exec, create, secuirty/*-pilot, allow","p, proj:secuirty:pilot-dev-sync, exec, create, secuirty/*-preview, allow"]},{"description":"Allow syncing prod apps from prod group","groups":["Argo_Platform_Prod"],"name":"prod-sync","policies":["p, proj:secuirty:prod-sync, logs, get, secuirty/*, allow","p, proj:secuirty:prod-sync, applications, get, secuirty/*, allow","p, proj:secuirty:prod-sync, applications, sync, secuirty/*, allow"]}],"sourceRepos":["*"]}}
+  name: secuirty
+  namespace: argocd
+spec:
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  destinations:
+    - namespace: '*'
+      server: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  orphanedResources:
+    warn: false
+  roles:
+    - description: Allow syncing dev and pilot apps from nonprod and its respective prod group
+      groups:
+        - Argo_Platform_NonProd
+        - Argo_Platform_Prod
+      name: pilot-dev-sync
+      policies:
+        - p, proj:secuirty:pilot-dev-sync, logs, get, secuirty/*, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, get, secuirty/*, allow
+        - p, proj:secuirty:pilot-dev-sync, applicationsets, get, secuirty/*, allow
+        - p, proj:secuirty:pilot-dev-sync, applicationsets, list, secuirty/*, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, sync, secuirty/*-feature, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, sync, secuirty/*-dev, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, sync, secuirty/*-pilot, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, sync, secuirty/*-preview, allow
+        - p, proj:secuirty:pilot-dev-sync, override, applications, secuirty/*, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, delete, secuirty/*-feature, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, delete, secuirty/*-dev, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, delete, secuirty/*-pilot, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, delete, secuirty/*-preview, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, action/apps/Deployment/restart, secuirty/*-feature, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, action/apps/Deployment/restart, secuirty/*-dev, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, action/apps/Deployment/restart, secuirty/*-pilot, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, action/apps/Deployment/restart, secuirty/*-preview, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, action/batch/CronJob/create-job, secuirty/*-feature, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, action/batch/CronJob/create-job, secuirty/*-dev, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, action/batch/CronJob/create-job, secuirty/*-pilot, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, action/batch/CronJob/create-job, secuirty/*-preview, allow
+        - p, proj:secuirty:pilot-dev-sync, applications, update, secuirty/*-dev, allow
+        - p, proj:secuirty:pilot-dev-sync, exec, create, secuirty/*-feature, allow
+        - p, proj:secuirty:pilot-dev-sync, exec, create, secuirty/*-dev, allow
+        - p, proj:secuirty:pilot-dev-sync, exec, create, secuirty/*-pilot, allow
+        - p, proj:secuirty:pilot-dev-sync, exec, create, secuirty/*-preview, allow
+    - description: Allow syncing prod apps from prod group
+      groups:
+        - Argo_Platform_Prod
+      name: prod-sync
+      policies:
+        - p, proj:secuirty:prod-sync, logs, get, secuirty/*, allow
+        - p, proj:secuirty:prod-sync, applications, get, secuirty/*, allow
+        - p, proj:secuirty:prod-sync, applications, sync, secuirty/*, allow
+  sourceRepos:
+    - '*'

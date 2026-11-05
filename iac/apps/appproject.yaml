@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  annotations:
+    argocd.argoproj.io/tracking-id: apps-pt:argoproj.io/AppProject:argocd/apps
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"argoproj.io/v1alpha1","kind":"AppProject","metadata":{"annotations":{"argocd.argoproj.io/tracking-id":"apps-pt:argoproj.io/AppProject:argocd/apps"},"name":"apps","namespace":"argocd"},"spec":{"clusterResourceWhitelist":[{"group":"*","kind":"*"}],"destinations":[{"namespace":"*","server":"*"}],"namespaceResourceWhitelist":[{"group":"*","kind":"*"}],"orphanedResources":{"warn":false},"roles":[{"description":"Allow syncing dev and pilot apps from nonprod and its respective prod group","groups":["Argo_Media_NonProd","Argo_Media_Prod"],"name":"pilot-dev-sync","policies":["p, proj:apps:pilot-dev-sync, logs, get, apps/*, allow","p, proj:apps:pilot-dev-sync, applications, get, apps/*, allow","p, proj:apps:pilot-dev-sync, applicationsets, get, apps/*, allow","p, proj:apps:pilot-dev-sync, applicationsets, list, apps/*, allow","p, proj:apps:pilot-dev-sync, applications, sync, apps/*-feature, allow","p, proj:apps:pilot-dev-sync, applications, sync, apps/*-dev, allow","p, proj:apps:pilot-dev-sync, applications, sync, apps/*-pilot, allow","p, proj:apps:pilot-dev-sync, applications, sync, apps/*-preview, allow","p, proj:apps:pilot-dev-sync, override, applications, apps/*, allow","p, proj:apps:pilot-dev-sync, applications, delete, apps/*-feature, allow","p, proj:apps:pilot-dev-sync, applications, delete, apps/*-dev, allow","p, proj:apps:pilot-dev-sync, applications, delete, apps/*-pilot, allow","p, proj:apps:pilot-dev-sync, applications, delete, apps/*-preview, allow","p, proj:apps:pilot-dev-sync, applications, action/apps/Deployment/restart, apps/*-feature, allow","p, proj:apps:pilot-dev-sync, applications, action/apps/Deployment/restart, apps/*-dev, allow","p, proj:apps:pilot-dev-sync, applications, action/apps/Deployment/restart, apps/*-pilot, allow","p, proj:apps:pilot-dev-sync, applications, action/apps/Deployment/restart, apps/*-preview, allow","p, proj:apps:pilot-dev-sync, applications, action/batch/CronJob/create-job, apps/*-feature, allow","p, proj:apps:pilot-dev-sync, applications, action/batch/CronJob/create-job, apps/*-dev, allow","p, proj:apps:pilot-dev-sync, applications, action/batch/CronJob/create-job, apps/*-pilot, allow","p, proj:apps:pilot-dev-sync, applications, action/batch/CronJob/create-job, apps/*-preview, allow","p, proj:apps:pilot-dev-sync, applications, update, apps/*-dev, allow","p, proj:apps:pilot-dev-sync, exec, create, apps/*-feature, allow","p, proj:apps:pilot-dev-sync, exec, create, apps/*-dev, allow","p, proj:apps:pilot-dev-sync, exec, create, apps/*-pilot, allow","p, proj:apps:pilot-dev-sync, exec, create, apps/*-preview, allow"]},{"description":"Allow syncing prod apps from prod group","groups":["Argo_Media_Prod"],"name":"prod-sync","policies":["p, proj:apps:prod-sync, logs, get, apps/*, allow","p, proj:apps:prod-sync, applications, get, apps/*, allow","p, proj:apps:prod-sync, applications, sync, apps/*, allow"]}],"sourceRepos":["*"]}}
+  name: apps
+  namespace: argocd
+spec:
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  destinations:
+    - namespace: '*'
+      server: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  orphanedResources:
+    warn: false
+  roles:
+    - description: Allow syncing dev and pilot apps from nonprod and its respective prod group
+      groups:
+        - Argo_Media_NonProd
+        - Argo_Media_Prod
+      name: pilot-dev-sync
+      policies:
+        - p, proj:apps:pilot-dev-sync, logs, get, apps/*, allow
+        - p, proj:apps:pilot-dev-sync, applications, get, apps/*, allow
+        - p, proj:apps:pilot-dev-sync, applicationsets, get, apps/*, allow
+        - p, proj:apps:pilot-dev-sync, applicationsets, list, apps/*, allow
+        - p, proj:apps:pilot-dev-sync, applications, sync, apps/*-feature, allow
+        - p, proj:apps:pilot-dev-sync, applications, sync, apps/*-dev, allow
+        - p, proj:apps:pilot-dev-sync, applications, sync, apps/*-pilot, allow
+        - p, proj:apps:pilot-dev-sync, applications, sync, apps/*-preview, allow
+        - p, proj:apps:pilot-dev-sync, override, applications, apps/*, allow
+        - p, proj:apps:pilot-dev-sync, applications, delete, apps/*-feature, allow
+        - p, proj:apps:pilot-dev-sync, applications, delete, apps/*-dev, allow
+        - p, proj:apps:pilot-dev-sync, applications, delete, apps/*-pilot, allow
+        - p, proj:apps:pilot-dev-sync, applications, delete, apps/*-preview, allow
+        - p, proj:apps:pilot-dev-sync, applications, action/apps/Deployment/restart, apps/*-feature, allow
+        - p, proj:apps:pilot-dev-sync, applications, action/apps/Deployment/restart, apps/*-dev, allow
+        - p, proj:apps:pilot-dev-sync, applications, action/apps/Deployment/restart, apps/*-pilot, allow
+        - p, proj:apps:pilot-dev-sync, applications, action/apps/Deployment/restart, apps/*-preview, allow
+        - p, proj:apps:pilot-dev-sync, applications, action/batch/CronJob/create-job, apps/*-feature, allow
+        - p, proj:apps:pilot-dev-sync, applications, action/batch/CronJob/create-job, apps/*-dev, allow
+        - p, proj:apps:pilot-dev-sync, applications, action/batch/CronJob/create-job, apps/*-pilot, allow
+        - p, proj:apps:pilot-dev-sync, applications, action/batch/CronJob/create-job, apps/*-preview, allow
+        - p, proj:apps:pilot-dev-sync, applications, update, apps/*-dev, allow
+        - p, proj:apps:pilot-dev-sync, exec, create, apps/*-feature, allow
+        - p, proj:apps:pilot-dev-sync, exec, create, apps/*-dev, allow
+        - p, proj:apps:pilot-dev-sync, exec, create, apps/*-pilot, allow
+        - p, proj:apps:pilot-dev-sync, exec, create, apps/*-preview, allow
+    - description: Allow syncing prod apps from prod group
+      groups:
+        - Argo_Media_Prod
+      name: prod-sync
+      policies:
+        - p, proj:apps:prod-sync, logs, get, apps/*, allow
+        - p, proj:apps:prod-sync, applications, get, apps/*, allow
+        - p, proj:apps:prod-sync, applications, sync, apps/*, allow
+  sourceRepos:
+    - '*'
