@@ -3,6 +3,8 @@ kind: ApplicationSet
 metadata:
   name: dynamic-stacks
   namespace: argocd
+  labels:
+    dynamic: template
   annotations:
     argocd.argoproj.io/sync-wave: "-990"
     kargo.akuity.io/authorized-stage: "dynamic-stacks-project:argocd-sync-and-wait"

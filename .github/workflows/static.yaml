@@ -1,0 +1,243 @@
+name: Render and Distribute Static Manifests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'bootstrap/**'
+      - 'iac/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: render-static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render-and-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Source Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Tools (yq, kubectl)
+        uses: mikefarah/yq@v4.44.1
+
+      - name: Create Ephemeral KinD Cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: argocd-render-engine
+          wait: 120s
+
+      - name: Install Argo CD Core Control Plane
+        run: |
+          set -euo pipefail
+          echo "Installing Argo CD core manifests..."
+          kubectl create namespace argocd
+          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.7/manifests/core-install.yaml
+
+          echo "Awaiting ApplicationSet controller availability..."
+          kubectl rollout status deployment/argocd-applicationset-controller -n argocd --timeout=120s
+
+      - name: Configure Repository Authentication
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cat <<EOF | kubectl apply -n argocd -f -
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: repo-credentials
+            namespace: argocd
+            labels:
+              argocd.argoproj.io/secret-type: repo-creds
+          stringData:
+            type: git
+            url: "${REPO_URL}"
+            password: "${GH_TOKEN}"
+            username: "git"
+          EOF
+
+      - name: Stage 1 - Apply & Reconcile AppProjects
+        run: |
+          set -euo pipefail
+          echo "Applying Level-1 Project templates..."
+          kubectl apply -n argocd -f bootstrap/01-dynamic-projects.yaml
+
+          echo "Waiting for AppProjects to generate..."
+          for i in {1..30}; do
+            COUNT=$(kubectl get appprojects.argoproj.io -n argocd --no-headers 2>/dev/null | grep -v 'default' | wc -l || true)
+            if [ "$COUNT" -ge 3 ]; then
+              echo "AppProjects detected: $COUNT"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Stage 2 - Apply Stacks and ApplicationSets
+        run: |
+          set -euo pipefail
+          echo "Applying Level-2 and Level-3 ApplicationSets..."
+          # Apply only valid .yaml / .yml files, explicitly ignoring .noload files
+          find bootstrap/ -maxdepth 1 \( -name "02-*.yaml" -o -name "03-*.yaml" \) -exec kubectl apply -n argocd -f {} +
+
+          echo "Awaiting generation stability across nested resources..."
+          PREV_TOTAL=0
+          STABLE_CYCLES=0
+          REQUIRED_CYCLES=3
+
+          for i in {1..40}; do
+            APP_COUNT=$(kubectl get applications.argoproj.io -n argocd --no-headers 2>/dev/null | wc -l || true)
+            SET_COUNT=$(kubectl get applicationsets.argoproj.io -n argocd --no-headers 2>/dev/null | wc -l || true)
+            TOTAL=$((APP_COUNT + SET_COUNT))
+
+            echo "Cycle $i: Discovered $APP_COUNT Applications and $SET_COUNT ApplicationSets"
+
+            if [ "$TOTAL" -gt 0 ] && [ "$TOTAL" -eq "$PREV_TOTAL" ]; then
+              STABLE_CYCLES=$((STABLE_CYCLES + 1))
+              if [ "$STABLE_CYCLES" -ge "$REQUIRED_CYCLES" ]; then
+                echo "Reconciliation has stabilized at $TOTAL total resources."
+                break
+              fi
+            else
+              STABLE_CYCLES=0
+            fi
+
+            PREV_TOTAL=$TOTAL
+            sleep 4
+          done
+
+      - name: Correlate and Distribute Manifests into ./iac Hierarchy
+        run: |
+          set -euo pipefail
+
+          # -------------------------------------------------------------
+          # Helper Function: Sanitize Kubernetes YAML
+          # Strips dynamic runtime engine fields and owner linkages
+          # -------------------------------------------------------------
+          sanitize_manifest() {
+            yq eval '
+              del(.metadata.creationTimestamp) |
+              del(.metadata.generation) |
+              del(.metadata.resourceVersion) |
+              del(.metadata.uid) |
+              del(.metadata.managedFields) |
+              del(.metadata.ownerReferences) |
+              del(.status)
+            ' -
+          }
+
+          # -------------------------------------------------------------
+          # 1. PROCESS APPPROJECTS (Target: iac/<project>/appproject.yaml)
+          # -------------------------------------------------------------
+          echo "Exporting AppProjects..."
+          for proj in $(kubectl get appprojects.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
+            if [ "$proj" = "default" ]; then
+              continue
+            fi
+
+            # Locate root project directory in iac/ (case-insensitive fallback)
+            TARGET_DIR=""
+            if [ -d "iac/$proj" ]; then
+              TARGET_DIR="iac/$proj"
+            else
+              TARGET_DIR=$(find iac -maxdepth 1 -type d -iname "$proj" | head -n 1)
+            fi
+
+            if [ -n "$TARGET_DIR" ] && [ -d "$TARGET_DIR" ]; then
+              echo "Writing AppProject: $proj -> $TARGET_DIR/appproject.yaml"
+              kubectl get appproject.argoproj.io "$proj" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/appproject.yaml"
+            else
+              echo "::warning ::Could not locate root folder for AppProject: $proj"
+            fi
+          done
+
+          # -------------------------------------------------------------
+          # 2. PROCESS APPLICATIONSETS (Target: iac/<project>/<stack>/applicationset.yaml)
+          # -------------------------------------------------------------
+          echo "Exporting Nested ApplicationSets..."
+          for appset in $(kubectl get applicationsets.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
+            # Extract configured generator path if available
+            GEN_PATH=$(kubectl get applicationset.argoproj.io "$appset" -n argocd -o jsonpath='{.spec.generators[0].git.directories[0].path}' 2>/dev/null || true)
+            
+            TARGET_SET_DIR=""
+            if [ -n "$GEN_PATH" ]; then
+              BASE_PATH="${GEN_PATH%\/*}"
+              if [ -d "$BASE_PATH" ]; then
+                TARGET_SET_DIR="$BASE_PATH"
+              fi
+            fi
+
+            if [ -z "$TARGET_SET_DIR" ]; then
+              TARGET_SET_DIR=$(find iac -mindepth 2 -maxdepth 2 -type d -iname "$appset" -not -path "*/.*" | head -n 1)
+            fi
+
+            if [ -n "$TARGET_SET_DIR" ] && [ -d "$TARGET_SET_DIR" ]; then
+              echo "Writing ApplicationSet: $appset -> $TARGET_SET_DIR/applicationset.yaml"
+              kubectl get applicationset.argoproj.io "$appset" -n argocd -o yaml | sanitize_manifest > "$TARGET_SET_DIR/applicationset.yaml"
+            else
+              echo "::warning ::Could not locate directory for ApplicationSet: $appset"
+            fi
+          done
+
+          # -------------------------------------------------------------
+          # 3. PROCESS APPLICATIONS (Target: iac/<project>/<stack>/<app>/application.yaml)
+          # -------------------------------------------------------------
+          echo "Exporting Static Applications..."
+          for app in $(kubectl get applications.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
+            SRC_PATH=$(kubectl get application.argoproj.io "$app" -n argocd -o jsonpath='{.spec.source.path}' 2>/dev/null || true)
+            
+            TARGET_APP_DIR=""
+            if [[ "$SRC_PATH" == iac/* ]] && [ -d "$SRC_PATH" ]; then
+              TARGET_APP_DIR="$SRC_PATH"
+            elif [ -d "iac/$SRC_PATH" ]; then
+              TARGET_APP_DIR="iac/$SRC_PATH"
+            else
+              TARGET_APP_DIR=$(find iac -mindepth 3 -type d -iname "$app" -not -path "*/.*" | head -n 1)
+            fi
+
+            if [ -n "$TARGET_APP_DIR" ] && [ -d "$TARGET_APP_DIR" ]; then
+              echo "Writing Application: $app -> $TARGET_APP_DIR/application.yaml"
+              kubectl get application.argoproj.io "$app" -n argocd -o yaml | sanitize_manifest > "$TARGET_APP_DIR/application.yaml"
+            else
+              echo "::warning ::Could not locate leaf folder for Application: $app"
+            fi
+          done
+
+      - name: Verify Git Status
+        id: git_status
+        run: |
+          git status --short
+          echo "has_changes=$(git status --porcelain | wc -l)" >> "$GITHUB_OUTPUT"
+
+      - name: Create Pull Request to static Branch
+        if: steps.git_status.outputs.has_changes > 0
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(gitops): render dynamic templates into static manifests"
+          title: "Promote Rendered Static Manifests to static"
+          body: |
+            ### Automated Static Manifest Promotion
+            
+            This pull request synchronizes the static representations of all dynamic resources rendered by Argo CD:
+            
+            - **Level 1:** Rendered `AppProjects` distributed to `iac/<project>/appproject.yaml`[cite: 1].
+            - **Level 2:** Rendered `ApplicationSets` distributed to `iac/<project>/<stack>/applicationset.yaml`[cite: 1].
+            - **Level 3:** Rendered `Applications` distributed to `iac/<project>/<stack>/<app>/application.yaml`[cite: 1].
+            - **Exclusions:** Resources tagged with `dynamic: template` and `.noload` files were skipped.
+            - **Sanitization:** Runtime metadata (`status`, `ownerReferences`, `resourceVersion`, `uid`) has been stripped to prevent deletion cascading.
+          branch: sync/rendered-static-manifests
+          base: static
+          delete-branch: true

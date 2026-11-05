@@ -3,6 +3,8 @@ kind: ApplicationSet
 metadata:
   name: dynamic-applicationsets
   namespace: argocd
+  labels:
+    dynamic: template
   annotations:
     argocd.argoproj.io/sync-wave: "-980"
 spec:
