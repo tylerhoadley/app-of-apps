@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   render-and-export:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -95,29 +95,6 @@ jobs:
           kubectl apply --server-side --force-conflicts -f kargo/resources/crds/
           rm -rf kargo
 
-          # echo "Applying bootstrap files via applciation"
-          # cat <<EOF | kubectl apply -n argocd -f -
-          # apiVersion: argoproj.io/v1alpha1
-          # kind: Application
-          # metadata:
-          #   name: bootstrap-github
-          # spec:
-          #   project: default
-          #   syncPolicy:
-          #     automated: {}
-          #   source:
-          #     repoURL: git@github.com:tylerhoadley/app-of-apps.git
-          #     targetRevision: main
-          #     path: bootstrap
-          #     directory:
-          #       recurse: true
-          #   destination:
-          #     server: https://kubernetes.default.svc
-          #     namespace: argocd
-          # EOF
-          # echo " sleep to let bootstrap catchup"
-          # sleep 60
-
       - name: Stage 1 - Apply & Reconcile AppProjects
         run: |
           set -euo pipefail
@@ -137,7 +114,6 @@ jobs:
             fi
             sleep 2
           done
-          
 
       - name: Stage 2 - Apply Stacks and ApplicationSets
         run: |
@@ -185,87 +161,14 @@ jobs:
           echo "=== APPLICATIONSET CONTROLLER LOGS (LAST 150 LINES) ==="
           kubectl logs -n argocd deployment/argocd-applicationset-controller --tail=150 || true
 
-      # - name: Correlate and Distribute Manifests into ./iac Tree
-      #   run: |
-      #     set -euo pipefail
-
-      #     sanitize_manifest() {
-      #       yq eval '
-      #         del(.metadata.creationTimestamp) |
-      #         del(.metadata.generation) |
-      #         del(.metadata.resourceVersion) |
-      #         del(.metadata.uid) |
-      #         del(.metadata.managedFields) |
-      #         del(.metadata.ownerReferences) |
-      #         del(.status)
-      #       ' -
-      #     }
-
-      #     # 1. APPPROJECTS
-      #     echo "Exporting AppProjects..."
-      #     for proj in $(kubectl get appprojects.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
-      #       if [ "$proj" = "default" ]; then continue; fi
-
-      #       TARGET_DIR=""
-      #       if [ -d "iac/$proj" ]; then
-      #         TARGET_DIR="iac/$proj"
-      #       else
-      #         TARGET_DIR=$(find iac -maxdepth 1 -type d -iname "$proj" | head -n 1)
-      #       fi
-
-      #       if [ -n "$TARGET_DIR" ] && [ -d "$TARGET_DIR" ]; then
-      #         echo "Writing AppProject: $proj -> $TARGET_DIR/appproject.yaml"
-      #         kubectl get appproject.argoproj.io "$proj" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/appproject.yaml"
-      #       fi
-      #     done
-
-      #     # 2. APPLICATIONSETS
-      #     echo "Exporting ApplicationSets..."
-      #     for appset in $(kubectl get applicationsets.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
-      #       GEN_PATH=$(kubectl get applicationset.argoproj.io "$appset" -n argocd -o jsonpath='{.spec.generators[0].git.directories[0].path}' 2>/dev/null || true)
-            
-      #       TARGET_SET_DIR=""
-      #       if [ -n "$GEN_PATH" ]; then
-      #         BASE_PATH="${GEN_PATH%\/*}"
-      #         if [ -d "$BASE_PATH" ]; then
-      #           TARGET_SET_DIR="$BASE_PATH"
-      #         fi
-      #       fi
-
-      #       if [ -z "$TARGET_SET_DIR" ]; then
-      #         TARGET_SET_DIR=$(find iac -mindepth 2 -maxdepth 2 -type d -iname "$appset" -not -path "*/.*" | head -n 1)
-      #       fi
-
-      #       if [ -n "$TARGET_SET_DIR" ] && [ -d "$TARGET_SET_DIR" ]; then
-      #         echo "Writing ApplicationSet: $appset -> $TARGET_SET_DIR/applicationset.yaml"
-      #         kubectl get applicationset.argoproj.io "$appset" -n argocd -o yaml | sanitize_manifest > "$TARGET_SET_DIR/applicationset.yaml"
-      #       fi
-      #     done
-
-      #     # 3. APPLICATIONS
-      #     echo "Exporting Applications..."
-      #     for app in $(kubectl get applications.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}'); do
-      #       SRC_PATH=$(kubectl get application.argoproj.io "$app" -n argocd -o jsonpath='{.spec.source.path}' 2>/dev/null || true)
-            
-      #       TARGET_APP_DIR=""
-      #       if [[ "$SRC_PATH" == iac/* ]] && [ -d "$SRC_PATH" ]; then
-      #         TARGET_APP_DIR="$SRC_PATH"
-      #       elif [ -d "iac/$SRC_PATH" ]; then
-      #         TARGET_APP_DIR="iac/$SRC_PATH"
-      #       else
-      #         TARGET_APP_DIR=$(find iac -mindepth 3 -type d -iname "$app" -not -path "*/.*" | head -n 1)
-      #       fi
-
-      #       if [ -n "$TARGET_APP_DIR" ] && [ -d "$TARGET_APP_DIR" ]; then
-      #         echo "Writing Application: $app -> $TARGET_APP_DIR/application.yaml"
-      #         kubectl get application.argoproj.io "$app" -n argocd -o yaml | sanitize_manifest > "$TARGET_APP_DIR/application.yaml"
-      #       fi
-      #     done
       - name: Correlate and Distribute Manifests into ./iac Tree
         run: |
           set -euo pipefail
 
-          # Helper function to strip Kubernetes cluster-runtime state
+          # -------------------------------------------------------------
+          # Helper Function: Sanitize Manifests
+          # Strips runtime tracking metadata and formats multi-line YAML
+          # -------------------------------------------------------------
           sanitize_manifest() {
             yq eval '
               del(.metadata.creationTimestamp) |
@@ -281,126 +184,149 @@ jobs:
             ' -
           }
 
+          # -------------------------------------------------------------
+          # STAGE 1: APPPROJECTS (matched by .appProject_config.yaml)
+          # -------------------------------------------------------------
           echo "=========================================================="
-          echo "STAGE 1: Exporting AppProjects (matched by .appProject_config.yaml)"
+          echo "STAGE 1: Exporting AppProjects"
           echo "=========================================================="
-          # Level 1 directories: iac/apps, iac/platform, iac/secuirty
           while IFS= read -r marker; do
             TARGET_DIR=$(dirname "$marker")
             PROJECT_NAME=$(basename "$TARGET_DIR")
-            echo "Checking Project directory: $TARGET_DIR (Project: $PROJECT_NAME)"
+            echo "Checking Project: $PROJECT_NAME in $TARGET_DIR"
 
             if kubectl get appproject.argoproj.io "$PROJECT_NAME" -n argocd > /dev/null 2>&1; then
-              echo "  -> Found in cluster. Exporting to: $TARGET_DIR/appproject.yaml"
-              kubectl get appproject.argoproj.io "$PROJECT_NAME" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/appproject.yaml"
+              LABEL_DYNAMIC=$(kubectl get appproject.argoproj.io "$PROJECT_NAME" -n argocd -o jsonpath='{.metadata.labels.dynamic}' 2>/dev/null || true)
+              if [ "$LABEL_DYNAMIC" = "template" ]; then
+                echo "  -> [SKIP] AppProject '$PROJECT_NAME' has label dynamic=template"
+                continue
+              fi
+
+              echo "  -> Writing AppProject: $PROJECT_NAME -> $TARGET_DIR/$PROJECT_NAME.yaml"
+              kubectl get appproject.argoproj.io "$PROJECT_NAME" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/$PROJECT_NAME.yaml"
             else
-              echo "  -> [WARNING] No AppProject named '$PROJECT_NAME' found in cluster."
+              echo "  -> [WARNING] No AppProject named '$PROJECT_NAME' found in cluster"
             fi
           done < <(find iac -name ".appProject_config.yaml")
 
+          # -------------------------------------------------------------
+          # STAGE 2: APPLICATIONSETS (matched by .kargoProject_config.yaml)
+          # -------------------------------------------------------------
           echo "=========================================================="
-          echo "STAGE 2: Exporting ApplicationSets (matched by .kargoProject_config.yaml)"
+          echo "STAGE 2: Exporting ApplicationSets"
           echo "=========================================================="
-          # Level 2 directories: iac/apps/media, iac/platform/observability, etc.
           while IFS= read -r marker; do
             TARGET_DIR=$(dirname "$marker")
             STACK_NAME=$(basename "$TARGET_DIR")
             PARENT_DIR=$(basename "$(dirname "$TARGET_DIR")")
-            echo "Checking Stack directory: $TARGET_DIR (Stack: $STACK_NAME, Project: $PARENT_DIR)"
+            echo "Checking Stack: $STACK_NAME (Parent: $PARENT_DIR) in $TARGET_DIR"
 
-            # Check if there is an ApplicationSet matching this stack name or parent-stack name
-            MATCHING_APPSET=$(kubectl get applicationsets.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -E "(${STACK_NAME}|${PARENT_DIR}-${STACK_NAME})" | head -n 1 || true)
-
-            if [ -n "$MATCHING_APPSET" ]; then
-              echo "  -> Found ApplicationSet '$MATCHING_APPSET'. Exporting to: $TARGET_DIR/applicationset.yaml"
-              kubectl get applicationset.argoproj.io "$MATCHING_APPSET" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/applicationset.yaml"
-            else
-              # Also check if the stack generated an Application directly (e.g. apps-media-project)
-              MATCHING_APP=$(kubectl get applications.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -E "(${PARENT_DIR}-${STACK_NAME}|${STACK_NAME})" | head -n 1 || true)
-              if [ -n "$MATCHING_APP" ]; then
-                echo "  -> Found Stack Application '$MATCHING_APP'. Exporting to: $TARGET_DIR/application.yaml"
-                kubectl get application.argoproj.io "$MATCHING_APP" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/application.yaml"
-              else
-                echo "  -> [INFO] No cluster object found for stack: $STACK_NAME"
+            for appset in $(kubectl get applicationsets.argoproj.io -n argocd -o jsonpath='{.items[*].metadata.name}'); do
+              LABEL_DYNAMIC=$(kubectl get applicationset.argoproj.io "$appset" -n argocd -o jsonpath='{.metadata.labels.dynamic}' 2>/dev/null || true)
+              if [ "$LABEL_DYNAMIC" = "template" ]; then
+                continue
               fi
-            fi
+
+              if [[ "$appset" == *"$STACK_NAME"* ]] || [[ "$appset" == *"$PARENT_DIR-$STACK_NAME"* ]]; then
+                echo "  -> Writing ApplicationSet: $appset -> $TARGET_DIR/$appset.yaml"
+                kubectl get applicationset.argoproj.io "$appset" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/$appset.yaml"
+                break
+              fi
+            done
           done < <(find iac -name ".kargoProject_config.yaml")
 
+          # -------------------------------------------------------------
+          # STAGE 3: APPLICATIONS (matched by .applicationSets_config.yaml)
+          # -------------------------------------------------------------
           echo "=========================================================="
-          echo "STAGE 3: Exporting Leaf Applications (matched by .applicationSets_config.yaml)"
+          echo "STAGE 3: Exporting Leaf Applications"
           echo "=========================================================="
-          # Level 3 directories: iac/apps/media/plex, iac/secuirty/threat/trivy-operator, etc.
           while IFS= read -r marker; do
             TARGET_DIR=$(dirname "$marker")
             APP_NAME=$(basename "$TARGET_DIR")
             PARENT_STACK=$(basename "$(dirname "$TARGET_DIR")")
-            echo "Checking Leaf App directory: $TARGET_DIR (App: $APP_NAME, Stack: $PARENT_STACK)"
+            echo "Checking App: $APP_NAME (Stack: $PARENT_STACK) in $TARGET_DIR"
 
-            # Discover the Application in Argo CD containing the app folder name (e.g., 'plex' in 'media-plex-sets')
-            MATCHING_APP=$(kubectl get applications.argoproj.io -n argocd -l 'dynamic!=template' -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -E "(${APP_NAME})" | head -n 1 || true)
+            for app in $(kubectl get applications.argoproj.io -n argocd -o jsonpath='{.items[*].metadata.name}'); do
+              LABEL_DYNAMIC=$(kubectl get application.argoproj.io "$app" -n argocd -o jsonpath='{.metadata.labels.dynamic}' 2>/dev/null || true)
+              if [ "$LABEL_DYNAMIC" = "template" ]; then
+                continue
+              fi
 
-            if [ -n "$MATCHING_APP" ]; then
-              echo "  -> Found Application '$MATCHING_APP'. Exporting to: $TARGET_DIR/application.yaml"
-              kubectl get application.argoproj.io "$MATCHING_APP" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/application.yaml"
-            else
-              echo "  -> [WARNING] No Application matching '$APP_NAME' discovered in cluster."
-            fi
+              if [[ "$app" == *"$APP_NAME"* ]]; then
+                echo "  -> Writing Application: $app -> $TARGET_DIR/$app.yaml"
+                kubectl get application.argoproj.io "$app" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/$app.yaml"
+                break
+              fi
+            done
           done < <(find iac -name ".applicationSets_config.yaml")
 
-      - name: Inspect Working Tree & Ensure Diffs
-        run: |
-          echo "=== Git Working Tree Status ==="
-          git status --short
-          
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "No dynamic files were produced. Writing debug sync file to trigger PR pipeline test..."
-            echo "Debug run at $(date -u)" > iac/RENDER_DEBUG.txt
-          fi
-
-      - name: Commit, Push, and Open Pull Request via GitHub CLI
+      - name: Isolate Static Manifests and Open PR via GitHub CLI
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          # Configure Git author identity
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Check if there are modified or untracked files
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "No changes detected in workspace. Skipping PR creation."
+          # 1. Back up generated iac/ tree outside of the git workspace
+          echo "Backing up rendered manifests..."
+          rm -rf /tmp/rendered-iac
+          cp -r iac /tmp/rendered-iac
+
+          # 2. Strip non-manifest config markers and debug files
+          find /tmp/rendered-iac -name ".*_config.yaml" -delete
+          find /tmp/rendered-iac -name "RENDER_DEBUG.txt" -delete
+
+          # 3. Switch cleanly to static (or create an empty branch if static doesn't exist yet)
+          BRANCH_NAME="sync/rendered-static-manifests"
+          if git ls-remote --exit-code --heads origin static > /dev/null 2>&1; then
+            git fetch origin static:static
+            git checkout static
+            # Wipe every file tracked in the repo to guarantee obsolete/pruned apps are deleted
+            git rm -rf . > /dev/null 2>&1 || true
+          else
+            echo "Remote 'static' branch not found. Initializing empty orphan branch..."
+            git checkout --orphan static
+            git rm -rf . > /dev/null 2>&1 || true
+          fi
+
+          # 4. Clean untracked remnants
+          git clean -fdx
+
+          # 5. Restore only the freshly rendered manifests
+          mkdir -p iac
+          cp -r /tmp/rendered-iac/* iac/
+
+          # 6. Branch out to staging branch for PR creation
+          git checkout -B "$BRANCH_NAME"
+
+          # 7. Stage everything (Git tracks modifications, additions, and deletions)
+          git add -A iac/
+
+          if git diff --cached --quiet; then
+            echo "No differences found between newly rendered manifests and existing static branch."
             exit 0
           fi
 
-          BRANCH_NAME="sync/rendered-static-manifests"
-
-          # Switch to target branch locally or create a clean orphan/new branch
-          git checkout -B "$BRANCH_NAME"
-
-          # Stage all changes across iac/
-          git add iac/
-          git commit -m "chore(gitops): render dynamic templates into static manifests"
-
-          # Force-push the branch directly to GitHub (avoids cherry-pick divergence)
+          # 8. Commit and force-push the clean snapshot
+          git commit -m "chore(gitops): synchronize static manifests (prune obsolete, add new)"
           git push -u origin "$BRANCH_NAME" --force
 
-          # Check if a PR already exists from this branch to static
+          # 9. Open or update PR against static
           EXISTING_PR=$(gh pr list --base static --head "$BRANCH_NAME" --json number --jq '.[0].number')
-
           if [ -n "$EXISTING_PR" ]; then
-            echo "Pull request #$EXISTING_PR already exists and has been updated with the latest commit."
+            echo "Pull request #$EXISTING_PR updated with latest changes."
+            echo "PR URL: $(gh pr view "$EXISTING_PR" --json url --jq '.url')"
           else
-            echo "Opening new pull request against 'static'..."
-            gh pr create \
+            NEW_PR_URL=$(gh pr create \
               --base static \
               --head "$BRANCH_NAME" \
               --title "Promote Rendered Static Manifests to static" \
-              --body "Automated PR containing static manifests rendered from \`main\` into the \`./iac\` hierarchy."
+              --body "Automated promotion containing solely static manifests under \`iac/\`. Pruned obsolete applications and updated active manifests." \
+              | tail -n 1)
+            echo "Created Pull Request: $NEW_PR_URL"
           fi
 
-      - name: Output Pull Request Details
-        run: |
-          echo "PR Number: ${{ steps.cpr.outputs.pull-request-number }}"
-          echo "PR URL:    ${{ steps.cpr.outputs.pull-request-url }}"
-          echo "PR Action: ${{ steps.cpr.outputs.pull-request-operation }}"
+
