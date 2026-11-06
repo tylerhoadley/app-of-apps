@@ -184,119 +184,100 @@ jobs:
             ' -
           }
 
+          # 1. Discover target folders from marker files
+          PROJECT_MARKERS=$(find iac -type f -name ".appProject_config.yaml")
+          STACK_MARKERS=$(find iac -type f -name ".kargoProject_config.yaml")
+          APPSET_MARKERS=$(find iac -type f -name ".applicationSets_config.yaml")
+
+          # 2. Wipe ALL YAML files across iac/ EXCEPT import.yaml
+          find iac -type f \( -name "*.yaml" -o -name "*.yml" \) ! -name "import.yaml" -delete
+
           # -------------------------------------------------------------
-          # STAGE 1: APPPROJECTS (Level 1: matched by .appProject_config.yaml)
-          # Target: iac/<proj>/<proj>.yaml
+          # STAGE 1: APPPROJECTS
           # -------------------------------------------------------------
-          echo "=========================================================="
-          echo "STAGE 1: Exporting AppProjects"
-          echo "=========================================================="
+          echo "=== STAGE 1: Exporting AppProjects ==="
           while IFS= read -r marker; do
+            [ -z "$marker" ] && continue
             TARGET_DIR=$(dirname "$marker")
             PROJECT_NAME=$(basename "$TARGET_DIR")
-            echo "Checking Project: $PROJECT_NAME in $TARGET_DIR"
 
             if kubectl get appproject.argoproj.io "$PROJECT_NAME" -n argocd > /dev/null 2>&1; then
-              LABEL_DYNAMIC=$(kubectl get appproject.argoproj.io "$PROJECT_NAME" -n argocd -o jsonpath='{.metadata.labels.dynamic}' 2>/dev/null || true)
-              if [ "$LABEL_DYNAMIC" = "template" ]; then
-                echo "  -> [SKIP] AppProject '$PROJECT_NAME' has label dynamic=template"
-                continue
-              fi
+              LABEL_DYNAMIC=$(kubectl get appproject.argoproj.io "$PROJECT_NAME" -n argocd -o yaml | yq eval '.metadata.labels.dynamic // ""' -)
+              if [ "$LABEL_DYNAMIC" = "template" ]; then continue; fi
 
-              echo "  -> Writing AppProject: $PROJECT_NAME -> $TARGET_DIR/$PROJECT_NAME.yaml"
+              echo "Writing AppProject: $PROJECT_NAME -> $TARGET_DIR/$PROJECT_NAME.yaml"
               kubectl get appproject.argoproj.io "$PROJECT_NAME" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/$PROJECT_NAME.yaml"
-            else
-              echo "  -> [WARNING] No AppProject named '$PROJECT_NAME' found in cluster"
             fi
-          done < <(find iac -name ".appProject_config.yaml")
+          done <<< "$PROJECT_MARKERS"
 
           # -------------------------------------------------------------
-          # STAGE 2: DYNAMIC KARGO MANIFESTS (matched by .kargoProject_config.yaml)
-          # Dynamically iterates all CRD kinds under *.kargo.akuity.io
-          # Target: iac/<proj>/<stack>/<kind>.yaml (or <name>.yaml)
+          # STAGE 2: KARGO RESOURCES
           # -------------------------------------------------------------
-          echo "=========================================================="
-          echo "STAGE 2: Exporting All Kargo Resources (kargo.akuity.io)"
-          echo "=========================================================="
-
-          # 1. Discover all active resource types in the kargo.akuity.io API group
+          echo "=== STAGE 2: Exporting Kargo Resources ==="
           KARGO_RESOURCES=$(kubectl api-resources --api-group=kargo.akuity.io -o name 2>/dev/null | tr '\n' ' ' || true)
-          echo "Discovered Kargo API kinds: $KARGO_RESOURCES"
 
           while IFS= read -r marker; do
+            [ -z "$marker" ] && continue
             TARGET_DIR=$(dirname "$marker")
             STACK_NAME=$(basename "$TARGET_DIR")
             PARENT_DIR=$(basename "$(dirname "$TARGET_DIR")")
-            echo "Checking Stack: $STACK_NAME (Parent: $PARENT_DIR) in $TARGET_DIR"
 
-            # 2. Iterate across every discovered Kargo resource type
             for resource_type in $KARGO_RESOURCES; do
-              # Query all instances across all namespaces formatted as: namespace/name (or _cluster_/name for cluster-scoped)
               ITEMS=$(kubectl get "$resource_type" -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{" "}{end}' 2>/dev/null || true)
 
               for item in $ITEMS; do
                 ITEM_NS="${item%/*}"
                 ITEM_NAME="${item#*/}"
 
-                # Query object YAML
                 if [ -n "$ITEM_NS" ] && [ "$ITEM_NS" != "/" ]; then
                   RAW_YAML=$(kubectl get "$resource_type" "$ITEM_NAME" -n "$ITEM_NS" -o yaml 2>/dev/null || true)
                 else
                   RAW_YAML=$(kubectl get "$resource_type" "$ITEM_NAME" -o yaml 2>/dev/null || true)
                 fi
+                [ -z "$RAW_YAML" ] && continue
 
-                if [ -z "$RAW_YAML" ]; then continue; fi
-
-                # Skip root template generators if labeled with dynamic=template
                 LABEL_DYNAMIC=$(echo "$RAW_YAML" | yq eval '.metadata.labels.dynamic // ""' -)
                 if [ "$LABEL_DYNAMIC" = "template" ]; then continue; fi
 
-                # Check if this resource matches the stack name or parent-stack name
                 if [[ "$ITEM_NAME" == *"$STACK_NAME"* ]] || \
                    [[ "$ITEM_NAME" == *"$PARENT_DIR-$STACK_NAME"* ]] || \
                    [[ "$ITEM_NS" == *"$STACK_NAME"* ]] || \
                    [[ "$ITEM_NS" == *"$PARENT_DIR-$STACK_NAME"* ]]; then
 
                   KIND=$(echo "$RAW_YAML" | yq eval '.kind' - | tr '[:upper:]' '[:lower:]')
-
                   OUT_FILE="$TARGET_DIR/${KIND}.yaml"
-                  if [ -f "$OUT_FILE" ]; then
-                    OUT_FILE="$TARGET_DIR/${ITEM_NAME}.yaml"
-                  fi
+                  [ -f "$OUT_FILE" ] && OUT_FILE="$TARGET_DIR/${ITEM_NAME}.yaml"
 
-                  echo "  -> Writing Kargo [$KIND]: $ITEM_NAME -> $OUT_FILE"
+                  echo "Writing Kargo [$KIND]: $ITEM_NAME -> $OUT_FILE"
                   echo "$RAW_YAML" | sanitize_manifest > "$OUT_FILE"
                 fi
               done
             done
-          done < <(find iac -name ".kargoProject_config.yaml")
+          done <<< "$STACK_MARKERS"
 
           # -------------------------------------------------------------
-          # STAGE 3: LEAF APPLICATIONSETS (Level 3: matched by .applicationSets_config.yaml)
-          # Target: iac/<proj>/<stack>/<app>/<appset>.yaml
+          # STAGE 3: LEAF APPLICATIONSETS
           # -------------------------------------------------------------
-          echo "=========================================================="
-          echo "STAGE 3: Exporting Leaf ApplicationSets"
-          echo "=========================================================="
+          echo "=== STAGE 3: Exporting Leaf ApplicationSets ==="
           while IFS= read -r marker; do
+            [ -z "$marker" ] && continue
             TARGET_DIR=$(dirname "$marker")
             APP_NAME=$(basename "$TARGET_DIR")
-            PARENT_STACK=$(basename "$(dirname "$TARGET_DIR")")
-            echo "Checking Leaf ApplicationSet target: $APP_NAME (Stack: $PARENT_STACK) in $TARGET_DIR"
 
             for appset in $(kubectl get applicationsets.argoproj.io -n argocd -o jsonpath='{.items[*].metadata.name}'); do
-              LABEL_DYNAMIC=$(kubectl get applicationset.argoproj.io "$appset" -n argocd -o jsonpath='{.metadata.labels.dynamic}' 2>/dev/null || true)
-              if [ "$LABEL_DYNAMIC" = "template" ]; then
-                continue
-              fi
+              RAW_YAML=$(kubectl get applicationset.argoproj.io "$appset" -n argocd -o yaml 2>/dev/null || true)
+              [ -z "$RAW_YAML" ] && continue
+
+              LABEL_DYNAMIC=$(echo "$RAW_YAML" | yq eval '.metadata.labels.dynamic // ""' -)
+              if [ "$LABEL_DYNAMIC" = "template" ]; then continue; fi
 
               if [[ "$appset" == *"$APP_NAME"* ]]; then
-                echo "  -> Writing Leaf ApplicationSet: $appset -> $TARGET_DIR/$appset.yaml"
-                kubectl get applicationset.argoproj.io "$appset" -n argocd -o yaml | sanitize_manifest > "$TARGET_DIR/$appset.yaml"
+                echo "Writing Leaf ApplicationSet: $appset -> $TARGET_DIR/$appset.yaml"
+                echo "$RAW_YAML" | sanitize_manifest > "$TARGET_DIR/$appset.yaml"
                 break
               fi
             done
-          done < <(find iac -name ".applicationSets_config.yaml")
+          done <<< "$APPSET_MARKERS"
 
       - name: Isolate Static Manifests and Open PR via GitHub CLI
         env:
@@ -304,58 +285,38 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Configure Git author identity
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 1. Back up generated iac/ tree and .github/CODEOWNERS outside the git workspace
-          echo "Backing up rendered manifests and CODEOWNERS..."
+          # 1. Back up generated iac/ tree and CODEOWNERS
           rm -rf /tmp/rendered-iac /tmp/codeowners-backup
           cp -r iac /tmp/rendered-iac
+          [ -f ".github/CODEOWNERS" ] && mkdir -p /tmp/codeowners-backup && cp .github/CODEOWNERS /tmp/codeowners-backup/
 
-          if [ -f ".github/CODEOWNERS" ]; then
-            mkdir -p /tmp/codeowners-backup
-            cp .github/CODEOWNERS /tmp/codeowners-backup/CODEOWNERS
-          fi
-
-          # 2. Strip only the dynamic marker files and debug traces from the backup
-          # Retains all *.md / *.MD documentation files and raw values.yaml files
-          find /tmp/rendered-iac -name ".*_config.yaml" -delete
-          find /tmp/rendered-iac -name "RENDER_DEBUG.txt" -delete
-
-          # Fetch remote tracking branch index cleanly to prevent PR merge block
+          # 2. Switch cleanly to static (or create empty orphan if initializing)
+          BRANCH_NAME="sync/rendered-static-manifests"
           git fetch origin static:static || true
 
-          # 3. Switch cleanly to static (or create an empty branch if static does not exist)
-          BRANCH_NAME="sync/rendered-static-manifests"
           if git ls-remote --exit-code --heads origin static > /dev/null 2>&1; then
             git checkout static
-            # Wipe working tree so obsolete/pruned apps are removed
             git rm -rf . > /dev/null 2>&1 || true
           else
-            echo "Remote 'static' branch not found. Initializing empty orphan branch..."
             git checkout --orphan static
             git rm -rf . > /dev/null 2>&1 || true
           fi
-
-          # 4. Clean any untracked leftover files
           git clean -fdx
 
-          # 5. Restore clean rendered manifests
+          # 3. Restore ONLY the rendered manifests and CODEOWNERS
           mkdir -p iac
           cp -r /tmp/rendered-iac/* iac/
-
-          # 6. Restore .github/CODEOWNERS if present
-          if [ -f "/tmp/codeowners-backup/CODEOWNERS" ]; then
+          if [ -d "/tmp/codeowners-backup" ]; then
             mkdir -p .github
             cp /tmp/codeowners-backup/CODEOWNERS .github/CODEOWNERS
             git add .github/CODEOWNERS
           fi
 
-          # 7. Branch out to staging branch for PR creation
+          # 4. Check for diffs, commit, and push
           git checkout -B "$BRANCH_NAME"
-
-          # 8. Stage everything in iac/ (captures additions, edits, deletions, and markdown files)
           git add -A iac/
 
           if [ -z "$(git status --porcelain)" ]; then
@@ -363,14 +324,13 @@ jobs:
             exit 0
           fi
 
-          # 9. Commit and force-push the clean snapshot
-          git commit -m "chore(gitops): synchronize static manifests (prune obsolete, add new)"
+          git commit -m "chore(gitops): synchronize static manifests"
           git push -u origin "$BRANCH_NAME" --force
 
-          # 10. Open or update PR against static
+          # 5. Open or update PR
           EXISTING_PR=$(gh pr list --base static --head "$BRANCH_NAME" --json number --jq '.[0].number')
           if [ -n "$EXISTING_PR" ]; then
-            echo "Pull request #$EXISTING_PR updated with latest changes."
+            echo "Pull request #$EXISTING_PR updated."
             echo "PR URL: $(gh pr view "$EXISTING_PR" --json url --jq '.url')"
           else
             NEW_PR_URL=$(gh pr create \
