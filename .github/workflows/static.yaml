@@ -288,34 +288,31 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 1. Back up generated iac/ tree and CODEOWNERS
-          rm -rf /tmp/rendered-iac /tmp/codeowners-backup
+          # 1. Back up generated iac/ tree
+          rm -rf /tmp/rendered-iac
           cp -r iac /tmp/rendered-iac
-          [ -f ".github/CODEOWNERS" ] && mkdir -p /tmp/codeowners-backup && cp .github/CODEOWNERS /tmp/codeowners-backup/
 
-          # 2. Switch cleanly to static (or create empty orphan if initializing)
+          # 2. Clear local workspace manifests before checking out so Git won't block the switch
+          find iac -type f \( -name "*.yaml" -o -name "*.yml" \) ! -name "import.yaml" -delete 2>/dev/null || true
+
+          # 3. Switch cleanly to static (or create orphan if initializing)
           BRANCH_NAME="sync/rendered-static-manifests"
           git fetch origin static:static || true
 
           if git ls-remote --exit-code --heads origin static > /dev/null 2>&1; then
             git checkout static
-            git rm -rf . > /dev/null 2>&1 || true
           else
             git checkout --orphan static
-            git rm -rf . > /dev/null 2>&1 || true
           fi
-          git clean -fdx
 
-          # 3. Restore ONLY the rendered manifests and CODEOWNERS
+          # 4. Wipe all old YAMLs on static EXCEPT import.yaml so pruned apps are removed
+          find iac -type f \( -name "*.yaml" -o -name "*.yml" \) ! -name "import.yaml" -delete 2>/dev/null || true
+
+          # 5. Restore the freshly rendered manifests from backup
           mkdir -p iac
           cp -r /tmp/rendered-iac/* iac/
-          if [ -d "/tmp/codeowners-backup" ]; then
-            mkdir -p .github
-            cp /tmp/codeowners-backup/CODEOWNERS .github/CODEOWNERS
-            git add .github/CODEOWNERS
-          fi
 
-          # 4. Check for diffs, commit, and push
+          # 6. Check for diffs, commit, and push
           git checkout -B "$BRANCH_NAME"
           git add -A iac/
 
@@ -327,7 +324,7 @@ jobs:
           git commit -m "chore(gitops): synchronize static manifests"
           git push -u origin "$BRANCH_NAME" --force
 
-          # 5. Open or update PR
+          # 7. Open or update PR
           EXISTING_PR=$(gh pr list --base static --head "$BRANCH_NAME" --json number --jq '.[0].number')
           if [ -n "$EXISTING_PR" ]; then
             echo "Pull request #$EXISTING_PR updated."
