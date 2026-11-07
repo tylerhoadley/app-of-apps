@@ -77,14 +77,44 @@ jobs:
             sshPrivateKey: ${ARGO_GITHUB_TOKEN_BASE64}
           EOF
 
+          echo "Applying customized Argo CD ConfigMaps up front..."
+          cat <<EOF | kubectl apply -n argocd --server-side --force-conflicts -f -
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: argocd-cm
+            namespace: argocd
+            labels:
+              app.kubernetes.io/name: argocd-cm
+              app.kubernetes.io/part-of: argocd
+          data:
+            timeout.reconciliation: "5s"
+            repository.cache.expiration: "5s"
+          ---
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: argocd-cmd-params-cm
+            namespace: argocd
+            labels:
+              app.kubernetes.io/name: argocd-cmd-params-cm
+              app.kubernetes.io/part-of: argocd
+          data:
+            applicationsetcontroller.sync.interval: "5s"
+            reposerver.git.request.timeout: "10s"
+          EOF
+
           # Verification: Inspect decoded secret metadata in cluster without leaking private key
+          echo "Verifying created configmap configuration..."
+          kubectl get configmap argocd-cm -n argocd && echo ""
+          kubectl get configmap argocd-cmd-params-cm -n argocd && echo ""
           echo "Verifying created secret configuration..."
           kubectl get secret ssh-github-creds -n argocd && echo ""
 
       - name: Install Argo CD Core Control Plane (v3.5.7)
         run: |
           set -euo pipefail
-          echo "Installing Argo CD v3.5.7 core manifests..."
+          echo "Installing Argo CD full manifests..."
           kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.7/manifests/install.yaml
 
           echo "Awaiting ApplicationSet controller availability..."
@@ -149,6 +179,8 @@ jobs:
       - name: Debug Controller Logs & Generator Errors
         if: always()
         run: |
+          echo "Holding for 10 seconds to allow argocd to catch up"
+          sleep 10
           echo "=== KUBERNETES APPPROJECTS ==="
           kubectl get appprojects.argoproj.io -n argocd -o wide || true
 
@@ -157,6 +189,9 @@ jobs:
 
           echo "=== KUBERNETES APPLICATIONS ==="
           kubectl get applications.argoproj.io -n argocd -o wide || true
+
+          echo "=== KUBERNETES KARGO Objects ==="
+          kubectl api-resources --api-group=kargo.akuity.io -o wide || true
 
           echo "=== APPLICATIONSET CONTROLLER LOGS (LAST 150 LINES) ==="
           kubectl logs -n argocd deployment/argocd-applicationset-controller --tail=150 || true
