@@ -17,7 +17,7 @@ spec:
         files:
           - path: "iac/*/*/*/.applicationSets_config.yaml"
   syncPolicy:
-    # preserveResourcesOnDeletion: true 
+    preserveResourcesOnDeletion: false
   template:
     metadata:
       name: '{{index .path.segments 2}}-{{ .path.basename }}-sets'
@@ -76,6 +76,8 @@ spec:
               goTemplate: true
               goTemplateOptions:
                 - missingkey=error
+              syncPolicy:
+                preserveResourcesOnDeletion: false
               template:
                 spec:
                   {{ if .autoSource }}

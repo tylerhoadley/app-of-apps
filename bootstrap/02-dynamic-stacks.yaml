@@ -17,8 +17,8 @@ spec:
         revision: main
         files:
           - path: "iac/*/*/.kargoProject_config.yaml"
-  # syncPolicy:
-  #   preserveResourcesOnDeletion: true 
+  syncPolicy:
+    preserveResourcesOnDeletion: false
   template:
     metadata:
       name: '{{index .path.segments 1}}-{{ .path.basename }}-project'
