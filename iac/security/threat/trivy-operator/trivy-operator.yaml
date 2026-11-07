@@ -21,7 +21,7 @@ spec:
   goTemplateOptions:
     - missingkey=error
   syncPolicy:
-    preserveResourcesOnDeletion: true
+    preserveResourcesOnDeletion: false
   template:
     metadata:
       name: '{{ .appName }}-{{ .env }}'
